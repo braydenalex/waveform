@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=280">
+  <title>Volume Control</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <span class="icon">🔊</span>
+      <span class="title">Volume Control</span>
+    </div>
+    
+    <div class="domain" id="domain">Loading...</div>
+    
+    <div class="volume-section">
+      <div class="volume-display">
+        <span class="volume-value" id="volumeValue">100</span>
+        <span class="volume-percent">%</span>
+      </div>
+      
+      <input type="range" 
+             id="volumeSlider" 
+             class="volume-slider" 
+             min="0" 
+             max="200" 
+             value="100"
+             step="1">
+      
+      <div class="volume-labels">
+        <span>0%</span>
+        <span>100%</span>
+        <span>200%</span>
+      </div>
+    </div>
+    
+    <div class="method-section">
+      <label class="method-label">Control Method:</label>
+      <div class="method-buttons">
+        <button class="method-btn active" data-method="webaudio" id="btnWebAudio">
+          Web Audio
+        </button>
+        <button class="method-btn" data-method="html5" id="btnHTML5">
+          HTML5
+        </button>
+        <button class="method-btn" data-method="both" id="btnBoth">
+          Both
+        </button>
+      </div>
+      <div class="method-hint" id="methodHint">
+        Try different methods if audio control doesn't work on a site.
+      </div>
+    </div>
+    
+    <div class="quick-buttons">
+      <button class="quick-btn" data-volume="0">Mute</button>
+      <button class="quick-btn" data-volume="50">50%</button>
+      <button class="quick-btn" data-volume="100">100%</button>
+      <button class="quick-btn" data-volume="150">150%</button>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
