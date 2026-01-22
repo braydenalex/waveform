@@ -38,10 +38,8 @@ const resetBtn = document.getElementById('resetBtn');
 // Initialize popup
 async function init() {
     try {
-        // Load global settings first
         await loadGlobalSettings();
 
-        // Get current tab info from background
         const response = await browser.runtime.sendMessage({ type: 'getTabInfo' });
 
         if (response.error) {
@@ -52,14 +50,14 @@ async function init() {
         currentTabId = response.tabId;
         currentDomain = response.domain;
 
-        // Get saved settings based on preferences
         if (response.settings) {
-            // Method: use saved if rememberMethod is on, otherwise default to 'both'
             const method = globalSettings.rememberMethod && response.settings.method
                 ? response.settings.method
                 : 'both';
 
-            // Volume: use saved if rememberVolume is on, otherwise default to 100%
+            const volume = globalSettings.rememberVolume && response.settings.volume !== undefined
+                ? response.settings.volume
+                : 100;
             const volume = globalSettings.rememberVolume && response.settings.volume !== undefined
                 ? response.settings.volume
                 : 100;
@@ -76,7 +74,6 @@ async function init() {
         updateMethodUI(currentSettings.method);
         updateMaxVolumeUI();
 
-        // Get audio state from content script
         fetchAudioState();
 
     } catch (err) {
@@ -98,7 +95,6 @@ async function fetchAudioState() {
     }
 }
 
-// Update audio detection badges
 // Security: Sanitize inputs to prevent XSS
 function escapeHTML(str) {
     if (!str) return '';
