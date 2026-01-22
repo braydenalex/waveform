@@ -1,5 +1,4 @@
-// Audio Injector - runs in page context (not content script sandbox)
-// Provides multiple methods for volume control and audio type detection
+// Audio Injector 
 
 (function () {
     'use strict';
@@ -7,14 +6,16 @@
     let currentVolume = 1.0;
     let currentMethod = 'both';
 
-    // Audio detection state
     const audioState = {
         hasWebAudio: false,
         hasHTML5Audio: false,
         hasHTML5Video: false,
         webAudioContextCount: 0,
         html5AudioCount: 0,
-        html5VideoCount: 0
+        html5VideoCount: 0,
+        // Codec detection
+        detectedCodecs: [],
+        streamType: null  // 'hls', 'dash', 'direct', etc.
     };
 
     // ==========================================
@@ -22,14 +23,12 @@
     // ==========================================
 
     const audioContexts = new Set();
-    const gainNodes = new Map(); // Map AudioContext -> GainNode
-    const mediaSourceNodes = new Map(); // Map HTMLMediaElement -> MediaElementSourceNode
+    const gainNodes = new Map();
+    const mediaSourceNodes = new Map();
 
-    // Store original constructors
     const OriginalAudioContext = window.AudioContext;
     const OriginalWebkitAudioContext = window.webkitAudioContext;
 
-    // Create a shared AudioContext for HTML5 media boost
     let sharedContext = null;
     let sharedGain = null;
 
@@ -46,13 +45,11 @@
         return { context: sharedContext, gain: sharedGain };
     }
 
-    // Patch AudioContext to capture all new instances
     if (OriginalAudioContext) {
         window.AudioContext = function (...args) {
             const ctx = new OriginalAudioContext(...args);
             setupAudioContext(ctx);
 
-            // Update detection state
             audioState.hasWebAudio = true;
             audioState.webAudioContextCount++;
             broadcastAudioState();
@@ -67,7 +64,6 @@
             const ctx = new OriginalWebkitAudioContext(...args);
             setupAudioContext(ctx);
 
-            // Update detection state
             audioState.hasWebAudio = true;
             audioState.webAudioContextCount++;
             broadcastAudioState();
@@ -80,38 +76,29 @@
     function setupAudioContext(ctx) {
         audioContexts.add(ctx);
 
-        // Create a gain node for this context
         const gain = ctx.createGain();
         gain.gain.value = currentVolume;
         gainNodes.set(ctx, gain);
-
-        // Store original destination
         const realDestination = ctx.destination;
 
-        // Connect our gain to the real destination
         gain.connect(realDestination);
 
         ctx._realDestination = realDestination;
         ctx._volumeGain = gain;
     }
 
-    // Override AudioNode.prototype.connect to intercept destination connections
     const OriginalConnect = AudioNode.prototype.connect;
     AudioNode.prototype.connect = function (destination, ...args) {
-        // Check if connecting to a destination node
         if (destination instanceof AudioDestinationNode) {
-            // Find the gain node for this context
             const ctx = this.context;
             const gain = gainNodes.get(ctx);
             if (gain && this !== gain) {
-                // Route through our gain node instead
                 return OriginalConnect.call(this, gain, ...args);
             }
         }
         return OriginalConnect.call(this, destination, ...args);
     };
 
-    // Update all Web Audio gain nodes
     function setWebAudioVolume(volume) {
         gainNodes.forEach((gain) => {
             if (gain && gain.gain) {
@@ -133,7 +120,6 @@
         if (processedMedia.has(el)) return;
         processedMedia.add(el);
 
-        // Update detection state
         if (el.tagName === 'AUDIO') {
             audioState.hasHTML5Audio = true;
             audioState.html5AudioCount++;
@@ -141,6 +127,13 @@
             audioState.hasHTML5Video = true;
             audioState.html5VideoCount++;
         }
+
+        // Detect codecs and stream type
+        detectMediaInfo(el);
+
+        el.addEventListener('loadedmetadata', () => detectMediaInfo(el));
+        el.addEventListener('loadeddata', () => detectMediaInfo(el));
+
         broadcastAudioState();
 
         // Store the original volume
@@ -148,9 +141,162 @@
         el._volumeMultiplier = currentVolume;
     }
 
+    // ==========================================
+    // CODEC DETECTION
+    // ==========================================
+
+    const VIDEO_CODECS = [
+        { name: 'H.264', color: '#4da6ff', patterns: ['avc1', 'h264', 'mp4v'] },
+        { name: 'H.265/HEVC', color: '#9b59b6', patterns: ['hev1', 'hvc1', 'h265', 'hevc'] },
+        { name: 'VP9', color: '#2ecc71', patterns: ['vp9', 'vp09'] },
+        { name: 'VP8', color: '#27ae60', patterns: ['vp8'] },
+        { name: 'AV1', color: '#e74c3c', patterns: ['av01', 'av1'] }
+    ];
+
+    const AUDIO_CODECS = [
+        { name: 'AAC', color: '#f39c12', patterns: ['mp4a', 'aac'] },
+        { name: 'MP3', color: '#e67e22', patterns: ['mp3', 'mpeg'], exclude: ['mp4'] },
+        { name: 'Opus', color: '#1abc9c', patterns: ['opus'] },
+        { name: 'Vorbis', color: '#16a085', patterns: ['vorbis'] },
+        { name: 'FLAC', color: '#3498db', patterns: ['flac'] },
+        { name: 'Dolby', color: '#8e44ad', patterns: ['ac-3', 'ec-3', 'ac3'] }
+    ];
+
+    const STREAM_TYPES = [
+        { type: 'HLS', color: '#e91e63', patterns: ['.m3u8', 'm3u8'] },
+        { type: 'DASH', color: '#673ab7', patterns: ['.mpd', 'dash'] },
+        { type: 'MP4', color: '#607d8b', patterns: ['.mp4'] },
+        { type: 'WebM', color: '#009688', patterns: ['.webm'] },
+        { type: 'MP3', color: '#e67e22', patterns: ['.mp3'] },
+        { type: 'OGG', color: '#795548', patterns: ['.ogg', '.oga'] },
+        { type: 'FLAC', color: '#3498db', patterns: ['.flac'] },
+        { type: 'WAV', color: '#9e9e9e', patterns: ['.wav'] },
+        { type: 'Blob/MSE', color: '#ff5722', patterns: ['blob:'] }
+    ];
+
+    function parseCodecFromMime(mimeType) {
+        if (!mimeType) return null;
+
+        const codecs = [];
+        const mime = mimeType.toLowerCase();
+
+        const check = (def) => {
+            const match = def.patterns.some(p => mime.includes(p));
+            if (match && (!def.exclude || !def.exclude.some(e => mime.includes(e)))) {
+                return true;
+            }
+            return false;
+        };
+
+        VIDEO_CODECS.forEach(def => {
+            if (check(def)) codecs.push({ type: 'video', codec: def.name, color: def.color });
+        });
+
+        AUDIO_CODECS.forEach(def => {
+            if (check(def)) codecs.push({ type: 'audio', codec: def.name, color: def.color });
+        });
+
+        return codecs;
+    }
+
+    function detectStreamType(url) {
+        if (!url) return null;
+        const urlLower = url.toLowerCase();
+
+        for (const def of STREAM_TYPES) {
+            if (def.patterns.some(p => urlLower.includes(p))) {
+                return { type: def.type, color: def.color };
+            }
+        }
+
+        return { type: 'Stream', color: '#607d8b' };
+    }
+
+    // Detect media info from element
+    function detectMediaInfo(el) {
+        const codecsSet = new Set();
+        let foundCodecs = [];
+
+        // Check source URL
+        const src = el.currentSrc || el.src;
+        if (src) {
+            const streamType = detectStreamType(src);
+            if (streamType) {
+                audioState.streamType = streamType;
+            }
+        }
+
+        // Try to get codec from source elements
+        const sources = el.querySelectorAll('source');
+        sources.forEach(source => {
+            const type = source.getAttribute('type');
+            if (type) {
+                const parsed = parseCodecFromMime(type);
+                if (parsed) {
+                    parsed.forEach(c => {
+                        if (!codecsSet.has(c.codec)) {
+                            codecsSet.add(c.codec);
+                            foundCodecs.push(c);
+                        }
+                    });
+                }
+            }
+
+            // Also check source URL for stream type
+            const srcUrl = source.getAttribute('src');
+            if (srcUrl && !audioState.streamType) {
+                const streamType = detectStreamType(srcUrl);
+                if (streamType) {
+                    audioState.streamType = streamType;
+                }
+            }
+        });
+
+        // Try to detect from MediaSource if available
+        if (el.srcObject && el.srcObject instanceof MediaStream) {
+            const tracks = el.srcObject.getTracks();
+            tracks.forEach(track => {
+                if (track.kind === 'video') {
+                    const settings = track.getSettings();
+                    // MediaStream typically doesn't expose codec, but we can note it's a live stream
+                    if (!audioState.streamType) {
+                        audioState.streamType = { type: 'Live', color: '#f44336' };
+                    }
+                }
+            });
+        }
+
+        // Infer codecs from container if none found
+        if (foundCodecs.length === 0 && src) {
+            const urlLower = src.toLowerCase();
+
+            // Common container/codec associations
+            if (urlLower.includes('.mp4') || urlLower.includes('mp4')) {
+                foundCodecs.push({ type: 'video', codec: 'H.264*', color: '#4da6ff' });
+                foundCodecs.push({ type: 'audio', codec: 'AAC*', color: '#f39c12' });
+            } else if (urlLower.includes('.webm')) {
+                foundCodecs.push({ type: 'video', codec: 'VP9*', color: '#2ecc71' });
+                foundCodecs.push({ type: 'audio', codec: 'Opus*', color: '#1abc9c' });
+            } else if (urlLower.includes('.mp3')) {
+                foundCodecs.push({ type: 'audio', codec: 'MP3', color: '#e67e22' });
+            } else if (urlLower.includes('.m3u8')) {
+                foundCodecs.push({ type: 'video', codec: 'H.264*', color: '#4da6ff' });
+            }
+        }
+
+        if (foundCodecs.length > 0) {
+            foundCodecs.forEach(c => {
+                const exists = audioState.detectedCodecs.some(existing => existing.codec === c.codec);
+                if (!exists) {
+                    audioState.detectedCodecs.push(c);
+                }
+            });
+            broadcastAudioState();
+        }
+    }
+
     function routeMediaThroughWebAudio(el) {
         try {
-            // Check if already routed
             if (mediaSourceNodes.has(el)) {
                 return true;
             }
@@ -163,20 +309,16 @@
                 context.resume();
             }
 
-            // Create a source node from the media element
             const source = context.createMediaElementSource(el);
             mediaSourceNodes.set(el, source);
 
-            // Connect to our gain node
             source.connect(gain);
 
-            // Set element volume to max since gain handles it
             el.volume = 1;
 
             return true;
         } catch (e) {
-            // Media element might already be connected or CORS issue
-            console.log('[Volume Control] Cannot route media through Web Audio:', e.message);
+            console.log('[Waveform] Cannot route media through Web Audio:', e.message);
             return false;
         }
     }
@@ -219,12 +361,10 @@
     // ==========================================
 
     function setupMediaObserver() {
-        // Process existing elements
         document.querySelectorAll('audio, video').forEach(el => {
             processMediaElement(el);
         });
 
-        // Watch for new elements
         const observer = new MutationObserver((mutations) => {
             mutations.forEach(mutation => {
                 mutation.addedNodes.forEach(node => {
@@ -234,7 +374,6 @@
                             setHTML5Volume(currentVolume);
                         }
                     }
-                    // Check children
                     if (node.querySelectorAll) {
                         node.querySelectorAll('audio, video').forEach(el => {
                             processMediaElement(el);
@@ -258,6 +397,17 @@
     // ==========================================
 
     function setVolume(volume, method) {
+        if (typeof volume !== 'number' || !isFinite(volume)) {
+            console.warn('[Volume Control] Invalid volume value, ignoring');
+            return;
+        }
+        volume = Math.max(0, Math.min(100, volume));
+
+        const validMethods = ['webaudio', 'html5', 'both'];
+        if (!validMethods.includes(method)) {
+            method = 'both';
+        }
+
         currentVolume = volume;
         currentMethod = method;
 
@@ -275,12 +425,22 @@
     }
 
     // Listen for messages from content script
+    // Using unique message type prefix to reduce collision risk
+    // Origin validation is not possible in page context, but we validate message structure
     window.addEventListener('message', (event) => {
-        if (event.data?.type === 'VOLUME_CONTROL_SET') {
-            setVolume(event.data.volume, event.data.method);
+        if (event.source !== window) return;
+
+        if (!event.data || typeof event.data !== 'object') return;
+
+        if (event.data.type === 'VOLUME_CONTROL_SET') {
+            const volume = parseFloat(event.data.volume);
+            const method = String(event.data.method || 'both');
+            if (!isNaN(volume)) {
+                setVolume(volume, method);
+            }
         }
 
-        if (event.data?.type === 'VOLUME_CONTROL_GET_STATE') {
+        if (event.data.type === 'VOLUME_CONTROL_GET_STATE') {
             broadcastAudioState();
         }
     });
@@ -291,8 +451,7 @@
     // Broadcast initial state
     broadcastAudioState();
 
-    // Signal that injector is ready
     window.postMessage({ type: 'VOLUME_CONTROL_READY' }, '*');
 
-    console.log('[Volume Control] Audio injector loaded and ready');
+    console.log('[Waveform] Audio injector loaded and ready');
 })();

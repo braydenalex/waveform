@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 
 <head>
   <meta charset="UTF-8">
@@ -93,14 +93,47 @@
       </div>
 
       <div class="setting-item">
-        <label class="setting-label">Remember Sites</label>
+        <label class="setting-label">Remember Control Method</label>
         <div class="setting-control">
           <label class="toggle-switch">
-            <input type="checkbox" id="rememberSites" checked>
+            <input type="checkbox" id="rememberMethod" checked>
             <span class="toggle-slider"></span>
           </label>
         </div>
-        <div class="setting-hint">Save volume settings per website</div>
+        <div class="setting-hint">Remember your selected control method between sessions</div>
+      </div>
+
+      <div class="setting-item">
+        <label class="setting-label">Remember Volume</label>
+        <div class="setting-control">
+          <label class="toggle-switch">
+            <input type="checkbox" id="rememberVolume">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-hint">Save volume settings per website (resets to 100% when off)</div>
+      </div>
+
+      <div class="setting-item">
+        <label class="setting-label">Theme</label>
+        <div class="setting-control">
+          <select id="themeSelect">
+            <option value="light" selected>Light Mode</option>
+            <option value="dark">Dark Mode</option>
+          </select>
+        </div>
+        <div class="setting-hint">Choose your preferred color theme</div>
+      </div>
+
+      <div class="setting-item">
+        <label class="setting-label">Accessibility Mode</label>
+        <div class="setting-control">
+          <label class="toggle-switch">
+            <input type="checkbox" id="accessibilityMode">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-hint">Larger text and improved readability for better visibility</div>
       </div>
 
       <div class="setting-item">

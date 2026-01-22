@@ -3,7 +3,13 @@
 let currentTabId = null;
 let currentDomain = null;
 let currentSettings = { volume: 100, method: 'both' };
-let globalSettings = { maxVolume: 1000, rememberSites: true };
+let globalSettings = {
+    maxVolume: 1000,
+    rememberMethod: true,    // On by default
+    rememberVolume: false,   // Off by default (resets to 100%)
+    theme: 'light',          // Light by default
+    accessibilityMode: false // Off by default
+};
 let audioState = null;
 
 // DOM Elements
@@ -23,7 +29,10 @@ const mainPanel = document.getElementById('mainPanel');
 const settingsPanel = document.getElementById('settingsPanel');
 const backBtn = document.getElementById('backBtn');
 const maxVolumeSelect = document.getElementById('maxVolumeSelect');
-const rememberSitesToggle = document.getElementById('rememberSites');
+const rememberMethodToggle = document.getElementById('rememberMethod');
+const rememberVolumeToggle = document.getElementById('rememberVolume');
+const themeSelect = document.getElementById('themeSelect');
+const accessibilityToggle = document.getElementById('accessibilityMode');
 const resetBtn = document.getElementById('resetBtn');
 
 // Initialize popup
@@ -43,9 +52,19 @@ async function init() {
         currentTabId = response.tabId;
         currentDomain = response.domain;
 
-        // Get saved settings but always default to 100% volume if no saved settings
-        if (globalSettings.rememberSites && response.settings && response.settings.volume !== undefined) {
-            currentSettings = response.settings;
+        // Get saved settings based on preferences
+        if (response.settings) {
+            // Method: use saved if rememberMethod is on, otherwise default to 'both'
+            const method = globalSettings.rememberMethod && response.settings.method
+                ? response.settings.method
+                : 'both';
+
+            // Volume: use saved if rememberVolume is on, otherwise default to 100%
+            const volume = globalSettings.rememberVolume && response.settings.volume !== undefined
+                ? response.settings.volume
+                : 100;
+
+            currentSettings = { volume, method };
         } else {
             // Default: 100% volume, 'both' method
             currentSettings = { volume: 100, method: 'both' };
@@ -80,6 +99,25 @@ async function fetchAudioState() {
 }
 
 // Update audio detection badges
+// Security: Sanitize inputs to prevent XSS
+function escapeHTML(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function validateColor(color) {
+    // Only allow hex colors or simple safe fallbacks
+    if (color && /^#[0-9A-F]{3,8}$/i.test(color)) {
+        return color;
+    }
+    return '#888888';
+}
+
 function updateAudioDetectionUI(state) {
     audioState = state;
 
@@ -89,6 +127,14 @@ function updateAudioDetectionUI(state) {
     }
 
     const badges = [];
+
+    // Stream type badge (HLS, DASH, MP4, etc.)
+    if (state.streamType) {
+        const st = state.streamType;
+        const color = validateColor(st.color);
+        const type = escapeHTML(st.type);
+        badges.push(`<span class="badge badge-stream" style="background: ${color}20; color: ${color}; border-color: ${color}40;">📡 ${type}</span>`);
+    }
 
     if (state.hasWebAudio) {
         let label = 'Web Audio';
@@ -112,6 +158,16 @@ function updateAudioDetectionUI(state) {
             label += ` <span class="badge-count">(${state.html5AudioCount})</span>`;
         }
         badges.push(`<span class="badge badge-audio">🔈 ${label}</span>`);
+    }
+
+    // Codec badges
+    if (state.detectedCodecs && state.detectedCodecs.length > 0) {
+        state.detectedCodecs.forEach(codec => {
+            const icon = codec.type === 'video' ? '🎞️' : '🎧';
+            const color = validateColor(codec.color);
+            const codecName = escapeHTML(codec.codec);
+            badges.push(`<span class="badge badge-codec" style="background: ${color}20; color: ${color}; border-color: ${color}40;">${icon} ${codecName}</span>`);
+        });
     }
 
     if (badges.length === 0) {
@@ -138,10 +194,33 @@ async function loadGlobalSettings() {
 
         // Update settings UI
         maxVolumeSelect.value = globalSettings.maxVolume;
-        rememberSitesToggle.checked = globalSettings.rememberSites;
+        rememberMethodToggle.checked = globalSettings.rememberMethod;
+        rememberVolumeToggle.checked = globalSettings.rememberVolume;
+        themeSelect.value = globalSettings.theme;
+        accessibilityToggle.checked = globalSettings.accessibilityMode;
+
+        // Apply theme and accessibility mode
+        applyTheme(globalSettings.theme);
+        applyAccessibilityMode(globalSettings.accessibilityMode);
     } catch (err) {
         console.error('Error loading global settings:', err);
     }
+}
+
+// Apply theme to document
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    // Refresh slider colors after theme change (with small delay for CSS to apply)
+    setTimeout(() => {
+        if (currentSettings) {
+            updateVolumeUI(currentSettings.volume);
+        }
+    }, 50);
+}
+
+// Apply accessibility mode to document
+function applyAccessibilityMode(enabled) {
+    document.documentElement.setAttribute('data-accessibility', enabled.toString());
 }
 
 // Save global settings
@@ -177,9 +256,12 @@ function updateVolumeUI(volume) {
         percentEl.classList.remove('boost');
     }
 
-    // Update slider background gradient
+    // Update slider background gradient - get computed styles for theme colors
     const percent = (volume / maxVol) * 100;
-    volumeSlider.style.background = `linear-gradient(to right, #4da6ff ${percent}%, #2a2a4a ${percent}%)`;
+    const style = getComputedStyle(document.documentElement);
+    const accentColor = style.getPropertyValue('--accent-primary').trim() || '#4da6ff';
+    const bgColor = style.getPropertyValue('--bg-tertiary').trim() || '#2a2a4a';
+    volumeSlider.style.background = `linear-gradient(to right, ${accentColor} ${percent}%, ${bgColor} ${percent}%)`;
 
     // Mark slider as limited for HTML5
     volumeSlider.classList.toggle('limited', currentSettings.method === 'html5');
@@ -240,8 +322,9 @@ async function setVolume(volume, method) {
             method: currentSettings.method
         });
 
-        // Save to storage if remembering is enabled
-        if (globalSettings.rememberSites) {
+        // Save settings based on preferences
+        // Always save if either remember option is on (we'll filter on load)
+        if (globalSettings.rememberMethod || globalSettings.rememberVolume) {
             await browser.runtime.sendMessage({
                 type: 'saveSettings',
                 domain: currentDomain,
@@ -301,10 +384,30 @@ maxVolumeSelect.addEventListener('change', (e) => {
     updateMaxVolumeUI();
 });
 
-// Event: Remember sites toggle
-rememberSitesToggle.addEventListener('change', (e) => {
-    globalSettings.rememberSites = e.target.checked;
+// Event: Remember method toggle
+rememberMethodToggle.addEventListener('change', (e) => {
+    globalSettings.rememberMethod = e.target.checked;
     saveGlobalSettings();
+});
+
+// Event: Remember volume toggle
+rememberVolumeToggle.addEventListener('change', (e) => {
+    globalSettings.rememberVolume = e.target.checked;
+    saveGlobalSettings();
+});
+
+// Event: Theme change
+themeSelect.addEventListener('change', (e) => {
+    globalSettings.theme = e.target.value;
+    saveGlobalSettings();
+    applyTheme(globalSettings.theme);
+});
+
+// Event: Accessibility mode toggle
+accessibilityToggle.addEventListener('change', (e) => {
+    globalSettings.accessibilityMode = e.target.checked;
+    saveGlobalSettings();
+    applyAccessibilityMode(globalSettings.accessibilityMode);
 });
 
 // Event: Reset all sites

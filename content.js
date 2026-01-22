@@ -13,7 +13,7 @@ let audioState = {
     html5VideoCount: 0
 };
 
-// Inject the audio-injector.js into the page context IMMEDIATELY
+// Inject the audio-injector.js into the page context before anything else
 function injectAudioScript() {
     const script = document.createElement('script');
     script.src = browser.runtime.getURL('audio-injector.js');
@@ -26,7 +26,6 @@ function injectAudioScript() {
         injectorReady = true;
         script.remove();
         applyVolume();
-        // Request audio state after injection
         requestAudioState();
     };
 
@@ -86,21 +85,29 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Listen for messages from injector
 window.addEventListener('message', (event) => {
-    if (event.data?.type === 'VOLUME_CONTROL_READY') {
+    // Only accept messages from the same window
+    if (event.source !== window) return;
+
+    // Validate message structure
+    if (!event.data || typeof event.data !== 'object') return;
+    if (typeof event.data.type !== 'string') return;
+
+    if (event.data.type === 'VOLUME_CONTROL_READY') {
         injectorReady = true;
         console.log('[Volume Control] Injector ready');
     }
 
-    if (event.data?.type === 'VOLUME_CONTROL_AUDIO_STATE') {
-        audioState = event.data.audioState;
-        // Notify background/popup of state change
-        try {
-            browser.runtime.sendMessage({
-                type: 'audioStateUpdate',
-                audioState: audioState
-            });
-        } catch (e) {
-            // Popup might not be open
+    if (event.data.type === 'VOLUME_CONTROL_AUDIO_STATE') {
+        if (event.data.audioState && typeof event.data.audioState === 'object') {
+            audioState = event.data.audioState;
+            try {
+                browser.runtime.sendMessage({
+                    type: 'audioStateUpdate',
+                    audioState: audioState
+                });
+            } catch (e) {
+                // Popup might not be open
+            }
         }
     }
 });

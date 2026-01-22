@@ -31,7 +31,7 @@ async function saveSettings(domain, settings) {
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'getSettings') {
     getSettings(message.domain).then(sendResponse);
-    return true; // Keep channel open for async response
+    return true;
   }
 
   if (message.type === 'saveSettings') {
@@ -40,7 +40,6 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'getTabInfo') {
-    // Get current active tab info
     browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
       if (tabs[0]) {
         const domain = getDomain(tabs[0].url);
