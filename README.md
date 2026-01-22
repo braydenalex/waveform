@@ -6,7 +6,8 @@ I was really tired of seeing shady extensions that also didn't really seem to wo
 
 ## Features
 
-- **Volume Control (0-1000%+)**: Boost or lower audio beyond browser limits
+- **Per-Tab Volume Control**: Each tab has independent volume (0-1000%+)
+- **Per-Domain Memory**: Optionally remember settings per website for new tabs
 - **Multiple Control Methods**:
   - **Web Audio API**: For volume boost above 100%
   - **HTML5**: Standard volume control (0-100%)
@@ -14,7 +15,6 @@ I was really tired of seeing shady extensions that also didn't really seem to wo
 - **Media Detection**: Shows active audio/video sources on the page
 - **Codec Detection**: Displays video (H.264, H.265, VP9, AV1) and audio (AAC, MP3, Opus) codecs
 - **Stream Type Detection**: Identifies HLS, DASH, MP4, WebM, and other formats
-- **Per-Site Memory**: Optionally saves volume settings per website
 - **Theme Support**: Light and dark modes
 - **Accessibility Mode**: Larger text for better visibility
 

@@ -58,9 +58,6 @@ async function init() {
             const volume = globalSettings.rememberVolume && response.settings.volume !== undefined
                 ? response.settings.volume
                 : 100;
-            const volume = globalSettings.rememberVolume && response.settings.volume !== undefined
-                ? response.settings.volume
-                : 100;
 
             currentSettings = { volume, method };
         } else {

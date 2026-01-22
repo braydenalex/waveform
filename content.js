@@ -30,7 +30,7 @@ function injectAudioScript() {
     };
 
     script.onerror = (e) => {
-        console.error('[Volume Control] Failed to inject audio script:', e);
+        console.error('[Waveform] Failed to inject audio script:', e);
     };
 }
 
@@ -94,7 +94,7 @@ window.addEventListener('message', (event) => {
 
     if (event.data.type === 'VOLUME_CONTROL_READY') {
         injectorReady = true;
-        console.log('[Volume Control] Injector ready');
+        console.log('[Waveform] Injector ready');
     }
 
     if (event.data.type === 'VOLUME_CONTROL_AUDIO_STATE') {

@@ -135,10 +135,6 @@
         el.addEventListener('loadeddata', () => detectMediaInfo(el));
 
         broadcastAudioState();
-
-        // Store the original volume
-        el._originalVolume = el.volume;
-        el._volumeMultiplier = currentVolume;
     }
 
     // ==========================================
@@ -257,8 +253,6 @@
             const tracks = el.srcObject.getTracks();
             tracks.forEach(track => {
                 if (track.kind === 'video') {
-                    const settings = track.getSettings();
-                    // MediaStream typically doesn't expose codec, but we can note it's a live stream
                     if (!audioState.streamType) {
                         audioState.streamType = { type: 'Live', color: '#f44336' };
                     }
@@ -398,7 +392,7 @@
 
     function setVolume(volume, method) {
         if (typeof volume !== 'number' || !isFinite(volume)) {
-            console.warn('[Volume Control] Invalid volume value, ignoring');
+            console.warn('[Waveform] Invalid volume value');
             return;
         }
         volume = Math.max(0, Math.min(100, volume));
@@ -411,7 +405,7 @@
         currentVolume = volume;
         currentMethod = method;
 
-        console.log(`[Volume Control] Setting volume to ${(volume * 100).toFixed(0)}% using ${method} method`);
+        console.log(`[Waveform] Volume: ${(volume * 100).toFixed(0)}%, Method: ${method}`);
 
         if (method === 'webaudio') {
             setWebAudioVolume(volume);
