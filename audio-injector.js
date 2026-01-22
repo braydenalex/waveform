@@ -5,6 +5,7 @@
 
     let currentVolume = 1.0;
     let currentMethod = 'both';
+    let persistVolume = false;
 
     const audioState = {
         hasWebAudio: false,
@@ -133,6 +134,28 @@
 
         el.addEventListener('loadedmetadata', () => detectMediaInfo(el));
         el.addEventListener('loadeddata', () => detectMediaInfo(el));
+
+        // Persistence listeners
+        const applyPersistence = () => {
+            if (persistVolume) {
+                // Determine if we need to re-apply
+                if (currentMethod === 'html5' || currentMethod === 'both') {
+                    if (Math.abs(el.volume - currentVolume) > 0.01 && currentVolume <= 1) {
+                        el.volume = currentVolume;
+                    }
+                }
+                if (currentMethod === 'webaudio' || currentMethod === 'both') {
+                    if (currentVolume > 1) {
+                        // Ensure web audio routing if needed
+                        routeMediaThroughWebAudio(el);
+                    }
+                }
+            }
+        };
+
+        el.addEventListener('loadeddata', applyPersistence);
+        el.addEventListener('durationchange', applyPersistence);
+        el.addEventListener('play', applyPersistence);
 
         broadcastAudioState();
     }
@@ -431,6 +454,15 @@
             const method = String(event.data.method || 'both');
             if (!isNaN(volume)) {
                 setVolume(volume, method);
+            }
+        }
+
+        if (event.data.type === 'VOLUME_CONTROL_SET_PERSIST') {
+            persistVolume = !!event.data.persist;
+            console.log(`[Waveform] Persist volume: ${persistVolume}`);
+            // Re-apply immediately if turned on
+            if (persistVolume) {
+                setVolume(currentVolume, currentMethod);
             }
         }
 

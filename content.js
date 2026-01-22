@@ -62,6 +62,14 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: true });
     }
 
+    if (message.type === 'setPersist') {
+        window.postMessage({
+            type: 'VOLUME_CONTROL_SET_PERSIST',
+            persist: message.persist
+        }, '*');
+        sendResponse({ success: true });
+    }
+
     if (message.type === 'getStatus') {
         sendResponse({
             volume: currentVolume,

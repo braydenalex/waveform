@@ -7,6 +7,7 @@ let globalSettings = {
     maxVolume: 1000,
     rememberMethod: true,    // On by default
     rememberVolume: false,   // Off by default (resets to 100%)
+    persistVolume: false,    // Off by default (for dynamic sites)
     theme: 'light',          // Light by default
     accessibilityMode: false // Off by default
 };
@@ -31,6 +32,7 @@ const backBtn = document.getElementById('backBtn');
 const maxVolumeSelect = document.getElementById('maxVolumeSelect');
 const rememberMethodToggle = document.getElementById('rememberMethod');
 const rememberVolumeToggle = document.getElementById('rememberVolume');
+const persistVolumeToggle = document.getElementById('persistVolume');
 const themeSelect = document.getElementById('themeSelect');
 const accessibilityToggle = document.getElementById('accessibilityMode');
 const resetBtn = document.getElementById('resetBtn');
@@ -70,6 +72,9 @@ async function init() {
         updateVolumeUI(currentSettings.volume);
         updateMethodUI(currentSettings.method);
         updateMaxVolumeUI();
+
+        // Apply saved settings to the page
+        setVolume(currentSettings.volume, currentSettings.method);
 
         fetchAudioState();
 
@@ -189,6 +194,7 @@ async function loadGlobalSettings() {
         maxVolumeSelect.value = globalSettings.maxVolume;
         rememberMethodToggle.checked = globalSettings.rememberMethod;
         rememberVolumeToggle.checked = globalSettings.rememberVolume;
+        persistVolumeToggle.checked = globalSettings.persistVolume;
         themeSelect.value = globalSettings.theme;
         accessibilityToggle.checked = globalSettings.accessibilityMode;
 
@@ -315,15 +321,21 @@ async function setVolume(volume, method) {
             method: currentSettings.method
         });
 
-        // Save settings based on preferences
-        // Always save if either remember option is on (we'll filter on load)
+        // Always save settings if remember option is on, AND include persistVolume state
         if (globalSettings.rememberMethod || globalSettings.rememberVolume) {
             await browser.runtime.sendMessage({
                 type: 'saveSettings',
                 domain: currentDomain,
+                tabId: currentTabId,
                 settings: currentSettings
             });
         }
+
+        // Also send persistVolume state separately to ensure it updates immediately
+        await browser.tabs.sendMessage(currentTabId, {
+            type: 'setPersist',
+            persist: globalSettings.persistVolume
+        });
     } catch (err) {
         console.error('Error setting volume:', err);
     }
@@ -401,6 +413,14 @@ accessibilityToggle.addEventListener('change', (e) => {
     globalSettings.accessibilityMode = e.target.checked;
     saveGlobalSettings();
     applyAccessibilityMode(globalSettings.accessibilityMode);
+});
+
+// Event: Persist volume toggle
+persistVolumeToggle.addEventListener('change', (e) => {
+    globalSettings.persistVolume = e.target.checked;
+    saveGlobalSettings();
+    // Update current tab immediately
+    setVolume(currentSettings.volume, currentSettings.method);
 });
 
 // Event: Reset all sites
