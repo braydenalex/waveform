@@ -23,10 +23,16 @@ I was really tired of seeing shady extensions that also didn't really seem to wo
 
 ## Installation
 
-### Firefox (Temporary)
-1. Open `about:debugging#/runtime/this-firefox`
-2. Click "Load Temporary Add-on"
-3. Select `manifest.json` from this folder
+### Firefox Add-ons (Recommended)
+[![Get the Add-on](https://img.shields.io/badge/Firefox-Get%20Add--on-orange?logo=firefox)](https://addons.mozilla.org/firefox/addon/waveform/)
+
+Install directly from the Firefox Add-ons store for automatic updates.
+
+### Manual Installation
+1. Download the latest `.xpi` from [GitHub Releases](https://github.com/YOUR_USERNAME/waveform/releases)
+2. Open Firefox and go to `about:addons`
+3. Click the gear icon → "Install Add-on From File"
+4. Select the downloaded `.xpi` file
 
 ## Usage
 
