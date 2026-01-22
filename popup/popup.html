@@ -1,67 +1,117 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=280">
+  <meta name="viewport" content="width=300">
   <title>Volume Control</title>
   <link rel="stylesheet" href="popup.css">
 </head>
+
 <body>
   <div class="container">
     <div class="header">
       <span class="icon">🔊</span>
       <span class="title">Volume Control</span>
+      <button class="settings-toggle" id="settingsToggle" title="Settings">⚙️</button>
     </div>
-    
+
     <div class="domain" id="domain">Loading...</div>
-    
-    <div class="volume-section">
-      <div class="volume-display">
-        <span class="volume-value" id="volumeValue">100</span>
-        <span class="volume-percent">%</span>
+
+    <!-- Audio Detection Badge -->
+    <div class="audio-detection" id="audioDetection">
+      <span class="detection-label">Detected:</span>
+      <span class="detection-badges" id="detectionBadges">
+        <span class="badge badge-none">Scanning...</span>
+      </span>
+    </div>
+
+    <!-- Main Volume Control Panel -->
+    <div class="main-panel" id="mainPanel">
+      <div class="volume-section">
+        <div class="volume-display">
+          <span class="volume-value" id="volumeValue">100</span>
+          <span class="volume-percent">%</span>
+        </div>
+
+        <input type="range" id="volumeSlider" class="volume-slider" min="0" max="1000" value="100" step="1">
+
+        <div class="volume-labels">
+          <span>0%</span>
+          <span>100%</span>
+          <span id="maxLabel">1000%</span>
+        </div>
       </div>
-      
-      <input type="range" 
-             id="volumeSlider" 
-             class="volume-slider" 
-             min="0" 
-             max="200" 
-             value="100"
-             step="1">
-      
-      <div class="volume-labels">
-        <span>0%</span>
-        <span>100%</span>
-        <span>200%</span>
+
+      <div class="method-section">
+        <label class="method-label">Control Method:</label>
+        <div class="method-buttons">
+          <button class="method-btn" data-method="webaudio" id="btnWebAudio">
+            Web Audio
+          </button>
+          <button class="method-btn" data-method="html5" id="btnHTML5">
+            HTML5
+          </button>
+          <button class="method-btn active" data-method="both" id="btnBoth">
+            Both
+          </button>
+        </div>
+        <div class="method-warning" id="methodWarning" style="display: none;">
+          ⚠️ HTML5 method is limited to 100% - can only lower audio
+        </div>
+        <div class="method-hint" id="methodHint">
+          "Both" dynamically applies all available methods.
+        </div>
+      </div>
+
+      <div class="quick-buttons">
+        <button class="quick-btn" data-volume="0">Mute</button>
+        <button class="quick-btn" data-volume="50">50%</button>
+        <button class="quick-btn" data-volume="100">100%</button>
+        <button class="quick-btn" data-volume="200">200%</button>
       </div>
     </div>
-    
-    <div class="method-section">
-      <label class="method-label">Control Method:</label>
-      <div class="method-buttons">
-        <button class="method-btn active" data-method="webaudio" id="btnWebAudio">
-          Web Audio
-        </button>
-        <button class="method-btn" data-method="html5" id="btnHTML5">
-          HTML5
-        </button>
-        <button class="method-btn" data-method="both" id="btnBoth">
-          Both
-        </button>
+
+    <!-- Settings Panel -->
+    <div class="settings-panel" id="settingsPanel" style="display: none;">
+      <h3 class="settings-title">Settings</h3>
+
+      <div class="setting-item">
+        <label class="setting-label">Maximum Volume</label>
+        <div class="setting-control">
+          <select id="maxVolumeSelect">
+            <option value="200">200%</option>
+            <option value="300">300%</option>
+            <option value="500">500%</option>
+            <option value="1000" selected>1000%</option>
+            <option value="2000">2000%</option>
+            <option value="5000">5000%</option>
+            <option value="10000">10000% (Extreme)</option>
+          </select>
+        </div>
+        <div class="setting-hint">Only applies to Web Audio method. Higher values may cause distortion.</div>
       </div>
-      <div class="method-hint" id="methodHint">
-        Try different methods if audio control doesn't work on a site.
+
+      <div class="setting-item">
+        <label class="setting-label">Remember Sites</label>
+        <div class="setting-control">
+          <label class="toggle-switch">
+            <input type="checkbox" id="rememberSites" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-hint">Save volume settings per website</div>
       </div>
-    </div>
-    
-    <div class="quick-buttons">
-      <button class="quick-btn" data-volume="0">Mute</button>
-      <button class="quick-btn" data-volume="50">50%</button>
-      <button class="quick-btn" data-volume="100">100%</button>
-      <button class="quick-btn" data-volume="150">150%</button>
+
+      <div class="setting-item">
+        <button class="reset-btn" id="resetBtn">Reset All Saved Sites</button>
+      </div>
+
+      <button class="back-btn" id="backBtn">← Back to Controls</button>
     </div>
   </div>
-  
+
   <script src="popup.js"></script>
 </body>
+
 </html>

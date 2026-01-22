@@ -2,7 +2,7 @@
 
 // Default settings
 const DEFAULT_VOLUME = 100;
-const DEFAULT_METHOD = 'webaudio'; // 'webaudio' or 'html5'
+const DEFAULT_METHOD = 'both'; // 'webaudio', 'html5', or 'both'
 
 // Get domain from URL
 function getDomain(url) {
@@ -16,7 +16,7 @@ function getDomain(url) {
 // Get settings for a domain
 async function getSettings(domain) {
   if (!domain) return { volume: DEFAULT_VOLUME, method: DEFAULT_METHOD };
-  
+
   const result = await browser.storage.local.get(domain);
   return result[domain] || { volume: DEFAULT_VOLUME, method: DEFAULT_METHOD };
 }
@@ -33,20 +33,20 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     getSettings(message.domain).then(sendResponse);
     return true; // Keep channel open for async response
   }
-  
+
   if (message.type === 'saveSettings') {
     saveSettings(message.domain, message.settings).then(() => sendResponse({ success: true }));
     return true;
   }
-  
+
   if (message.type === 'getTabInfo') {
     // Get current active tab info
     browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
       if (tabs[0]) {
         const domain = getDomain(tabs[0].url);
         getSettings(domain).then(settings => {
-          sendResponse({ 
-            tabId: tabs[0].id, 
+          sendResponse({
+            tabId: tabs[0].id,
             domain: domain,
             settings: settings
           });
