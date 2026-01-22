@@ -4,7 +4,10 @@ A Firefox extension for per-tab audio volume control with advanced media detecti
 
 I was really tired of seeing shady extensions that also didn't really seem to work fully. So I decided to make my own that is open source and works well. Feel free to fork and make your own version!
 
+
 ## Features
+
+- **No Data Collection**: No data is collected by this extension
 
 - **Per-Tab Volume Control**: Each tab has independent volume (0-1000%+)
 - **Per-Domain Memory**: Optionally remember settings per website for new tabs

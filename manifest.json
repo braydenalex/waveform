@@ -1,13 +1,18 @@
 {
   "manifest_version": 3,
   "name": "Waveform",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Adjust audio volume and display other audio and video information.",
   "author": "Brayden Seaman",
   "browser_specific_settings": {
     "gecko": {
       "id": "waveform@brayden.dev",
-      "strict_min_version": "128.0"
+      "strict_min_version": "128.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
     },
     "gecko_android": {
       "strict_min_version": "128.0"
