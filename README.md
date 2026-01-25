@@ -29,7 +29,7 @@ I was really tired of seeing shady extensions that also didn't really seem to wo
 Install directly from the Firefox Add-ons store for automatic updates.
 
 ### Manual Installation
-1. Download the latest `.xpi` from [GitHub Releases](https://github.com/YOUR_USERNAME/waveform/releases)
+1. Download the latest `.xpi` from [GitHub Releases](https://github.com/braydenalex/waveform/releases)
 2. Open Firefox and go to `about:addons`
 3. Click the gear icon → "Install Add-on From File"
 4. Select the downloaded `.xpi` file
