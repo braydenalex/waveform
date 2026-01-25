@@ -63,7 +63,6 @@ async function init() {
 
             currentSettings = { volume, method };
         } else {
-            // Default: 100% volume, 'both' method
             currentSettings = { volume: 100, method: 'both' };
         }
 
@@ -73,7 +72,6 @@ async function init() {
         updateMethodUI(currentSettings.method);
         updateMaxVolumeUI();
 
-        // Apply saved settings to the page
         setVolume(currentSettings.volume, currentSettings.method);
 
         fetchAudioState();
@@ -97,7 +95,7 @@ async function fetchAudioState() {
     }
 }
 
-// Security: Sanitize inputs to prevent XSS
+// Sanitize inputs
 function escapeHTML(str) {
     if (!str) return '';
     return String(str)
@@ -109,7 +107,6 @@ function escapeHTML(str) {
 }
 
 function validateColor(color) {
-    // Only allow hex colors or simple safe fallbacks
     if (color && /^#[0-9A-F]{3,8}$/i.test(color)) {
         return color;
     }
@@ -190,7 +187,6 @@ async function loadGlobalSettings() {
             globalSettings = { ...globalSettings, ...result._globalSettings };
         }
 
-        // Update settings UI
         maxVolumeSelect.value = globalSettings.maxVolume;
         rememberMethodToggle.checked = globalSettings.rememberMethod;
         rememberVolumeToggle.checked = globalSettings.rememberVolume;
@@ -198,7 +194,6 @@ async function loadGlobalSettings() {
         themeSelect.value = globalSettings.theme;
         accessibilityToggle.checked = globalSettings.accessibilityMode;
 
-        // Apply theme and accessibility mode
         applyTheme(globalSettings.theme);
         applyAccessibilityMode(globalSettings.accessibilityMode);
     } catch (err) {
@@ -209,7 +204,6 @@ async function loadGlobalSettings() {
 // Apply theme to document
 function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
-    // Refresh slider colors after theme change (with small delay for CSS to apply)
     setTimeout(() => {
         if (currentSettings) {
             updateVolumeUI(currentSettings.volume);
@@ -233,7 +227,6 @@ async function saveGlobalSettings() {
 
 // Update volume display
 function updateVolumeUI(volume) {
-    // Clamp based on current method
     const maxVol = currentSettings.method === 'html5' ? 100 : globalSettings.maxVolume;
     volume = Math.min(volume, maxVol);
 
@@ -241,10 +234,8 @@ function updateVolumeUI(volume) {
     volumeSlider.max = maxVol;
     volumeValue.textContent = volume;
 
-    // Update max label
     maxLabel.textContent = maxVol + '%';
 
-    // Add boost indicator for >100%
     const valueEl = document.querySelector('.volume-value');
     const percentEl = document.querySelector('.volume-percent');
     if (volume > 100) {
@@ -427,7 +418,6 @@ persistVolumeToggle.addEventListener('change', (e) => {
 resetBtn.addEventListener('click', async () => {
     if (confirm('Clear all saved volume settings for all sites?')) {
         try {
-            // Get all keys and remove site-specific ones (keep _globalSettings)
             const all = await browser.storage.local.get(null);
             const keysToRemove = Object.keys(all).filter(k => k !== '_globalSettings');
             await browser.storage.local.remove(keysToRemove);

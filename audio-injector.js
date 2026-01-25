@@ -138,7 +138,6 @@
         // Persistence listeners
         const applyPersistence = () => {
             if (persistVolume) {
-                // Determine if we need to re-apply
                 if (currentMethod === 'html5' || currentMethod === 'both') {
                     if (Math.abs(el.volume - currentVolume) > 0.01 && currentVolume <= 1) {
                         el.volume = currentVolume;
@@ -146,7 +145,6 @@
                 }
                 if (currentMethod === 'webaudio' || currentMethod === 'both') {
                     if (currentVolume > 1) {
-                        // Ensure web audio routing if needed
                         routeMediaThroughWebAudio(el);
                     }
                 }
@@ -347,12 +345,9 @@
             processMediaElement(el);
 
             if (mediaSourceNodes.has(el)) {
-                // Already routed through Web Audio, gain node handles volume
                 el.volume = 1;
             } else if (volume > 1) {
-                // Try to route through Web Audio for boost
                 if (!routeMediaThroughWebAudio(el)) {
-                    // Fallback - can't boost, just set to max
                     el.volume = 1;
                 }
             } else {
@@ -435,15 +430,13 @@
         } else if (method === 'html5') {
             setHTML5Volume(volume);
         } else {
-            // 'both' - apply both methods
             setWebAudioVolume(volume);
             setHTML5Volume(volume);
         }
     }
 
     // Listen for messages from content script
-    // Using unique message type prefix to reduce collision risk
-    // Origin validation is not possible in page context, but we validate message structure
+
     window.addEventListener('message', (event) => {
         if (event.source !== window) return;
 

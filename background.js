@@ -50,13 +50,10 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const tabId = tabs[0].id;
         const domain = getDomain(tabs[0].url);
 
-        // Check if we have runtime settings for this tab
         let settings = tabSettings.get(tabId);
 
-        // If no runtime settings, try to load from domain storage
         if (!settings) {
           settings = await getDomainSettings(domain);
-          // Initialize tab with domain settings
           tabSettings.set(tabId, { ...settings });
         }
 
@@ -87,7 +84,6 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'saveSettings') {
-    // Save to domain storage AND update tab settings
     saveDomainSettings(message.domain, message.settings).then(() => {
       if (message.tabId) {
         setTabSettings(message.tabId, message.settings);
