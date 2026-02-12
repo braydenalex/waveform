@@ -3,6 +3,32 @@
 (function () {
     'use strict';
 
+    function getChannelToken() {
+        const fromCurrentScript = document.currentScript
+            && document.currentScript.dataset
+            && document.currentScript.dataset.waveformChannel;
+        if (fromCurrentScript) return fromCurrentScript;
+
+        const fallbackScript = document.querySelector('script[data-waveform-channel][src*="audio-injector.js"]');
+        if (fallbackScript && fallbackScript.dataset) {
+            return fallbackScript.dataset.waveformChannel || null;
+        }
+        return null;
+    }
+
+    const channelToken = getChannelToken();
+
+    if (!channelToken) {
+        console.warn('[Waveform] Missing secure channel token; injector disabled');
+        return;
+    }
+
+    const injectorEvents = {
+        command: `waveform:command:${channelToken}`,
+        state: `waveform:state:${channelToken}`,
+        ready: `waveform:ready:${channelToken}`
+    };
+
     let currentVolume = 1.0;
     let currentMethod = 'both';
     let persistVolume = false;
@@ -23,9 +49,10 @@
     // METHOD 1: Web Audio API - Capture & Route
     // ==========================================
 
-    const audioContexts = new Set();
     const gainNodes = new Map();
-    const mediaSourceNodes = new Map();
+    const mediaSourceNodes = new WeakMap();
+    let html5ApplyTimer = null;
+    let stateBroadcastTimer = null;
 
     const OriginalAudioContext = window.AudioContext;
     const OriginalWebkitAudioContext = window.webkitAudioContext;
@@ -46,14 +73,29 @@
         return { context: sharedContext, gain: sharedGain };
     }
 
+    function scheduleAudioStateUpdate() {
+        if (stateBroadcastTimer !== null) return;
+        stateBroadcastTimer = window.setTimeout(() => {
+            stateBroadcastTimer = null;
+            broadcastAudioState();
+        }, 80);
+    }
+
+    function scheduleHTML5VolumeApply() {
+        if (html5ApplyTimer !== null) return;
+        html5ApplyTimer = window.setTimeout(() => {
+            html5ApplyTimer = null;
+            if (currentMethod === 'html5' || currentMethod === 'both') {
+                setHTML5Volume(currentVolume);
+            }
+        }, 50);
+    }
+
     if (OriginalAudioContext) {
         window.AudioContext = function (...args) {
             const ctx = new OriginalAudioContext(...args);
             setupAudioContext(ctx);
-
-            audioState.hasWebAudio = true;
-            audioState.webAudioContextCount++;
-            broadcastAudioState();
+            scheduleAudioStateUpdate();
 
             return ctx;
         };
@@ -64,10 +106,7 @@
         window.webkitAudioContext = function (...args) {
             const ctx = new OriginalWebkitAudioContext(...args);
             setupAudioContext(ctx);
-
-            audioState.hasWebAudio = true;
-            audioState.webAudioContextCount++;
-            broadcastAudioState();
+            scheduleAudioStateUpdate();
 
             return ctx;
         };
@@ -75,8 +114,6 @@
     }
 
     function setupAudioContext(ctx) {
-        audioContexts.add(ctx);
-
         const gain = ctx.createGain();
         gain.gain.value = currentVolume;
         gainNodes.set(ctx, gain);
@@ -86,6 +123,14 @@
 
         ctx._realDestination = realDestination;
         ctx._volumeGain = gain;
+
+        const cleanup = () => {
+            if (ctx.state === 'closed') {
+                gainNodes.delete(ctx);
+                ctx.removeEventListener('statechange', cleanup);
+            }
+        };
+        ctx.addEventListener('statechange', cleanup);
     }
 
     const OriginalConnect = AudioNode.prototype.connect;
@@ -101,7 +146,11 @@
     };
 
     function setWebAudioVolume(volume) {
-        gainNodes.forEach((gain) => {
+        gainNodes.forEach((gain, ctx) => {
+            if (!ctx || ctx.state === 'closed') {
+                gainNodes.delete(ctx);
+                return;
+            }
             if (gain && gain.gain) {
                 gain.gain.value = volume;
             }
@@ -121,19 +170,15 @@
         if (processedMedia.has(el)) return;
         processedMedia.add(el);
 
-        if (el.tagName === 'AUDIO') {
-            audioState.hasHTML5Audio = true;
-            audioState.html5AudioCount++;
-        } else if (el.tagName === 'VIDEO') {
-            audioState.hasHTML5Video = true;
-            audioState.html5VideoCount++;
-        }
+        const onMediaChange = () => {
+            scheduleAudioStateUpdate();
+        };
 
-        // Detect codecs and stream type
-        detectMediaInfo(el);
-
-        el.addEventListener('loadedmetadata', () => detectMediaInfo(el));
-        el.addEventListener('loadeddata', () => detectMediaInfo(el));
+        el.addEventListener('loadedmetadata', onMediaChange);
+        el.addEventListener('loadeddata', onMediaChange);
+        el.addEventListener('durationchange', onMediaChange);
+        el.addEventListener('emptied', onMediaChange);
+        el.addEventListener('error', onMediaChange);
 
         // Persistence listeners
         const applyPersistence = () => {
@@ -154,8 +199,6 @@
         el.addEventListener('loadeddata', applyPersistence);
         el.addEventListener('durationchange', applyPersistence);
         el.addEventListener('play', applyPersistence);
-
-        broadcastAudioState();
     }
 
     // ==========================================
@@ -232,14 +275,21 @@
     // Detect media info from element
     function detectMediaInfo(el) {
         const codecsSet = new Set();
-        let foundCodecs = [];
+        const foundCodecs = [];
+        let streamType = null;
+
+        const addCodec = (codecInfo) => {
+            if (!codecInfo || codecsSet.has(codecInfo.codec)) return;
+            codecsSet.add(codecInfo.codec);
+            foundCodecs.push(codecInfo);
+        };
 
         // Check source URL
         const src = el.currentSrc || el.src;
         if (src) {
-            const streamType = detectStreamType(src);
-            if (streamType) {
-                audioState.streamType = streamType;
+            const detected = detectStreamType(src);
+            if (detected) {
+                streamType = detected;
             }
         }
 
@@ -250,21 +300,18 @@
             if (type) {
                 const parsed = parseCodecFromMime(type);
                 if (parsed) {
-                    parsed.forEach(c => {
-                        if (!codecsSet.has(c.codec)) {
-                            codecsSet.add(c.codec);
-                            foundCodecs.push(c);
-                        }
-                    });
+                    parsed.forEach(addCodec);
                 }
             }
 
             // Also check source URL for stream type
-            const srcUrl = source.getAttribute('src');
-            if (srcUrl && !audioState.streamType) {
-                const streamType = detectStreamType(srcUrl);
-                if (streamType) {
-                    audioState.streamType = streamType;
+            if (!streamType) {
+                const srcUrl = source.getAttribute('src');
+                if (srcUrl) {
+                    const detected = detectStreamType(srcUrl);
+                    if (detected) {
+                        streamType = detected;
+                    }
                 }
             }
         });
@@ -274,8 +321,8 @@
             const tracks = el.srcObject.getTracks();
             tracks.forEach(track => {
                 if (track.kind === 'video') {
-                    if (!audioState.streamType) {
-                        audioState.streamType = { type: 'Live', color: '#f44336' };
+                    if (!streamType) {
+                        streamType = { type: 'Live', color: '#f44336' };
                     }
                 }
             });
@@ -287,27 +334,19 @@
 
             // Common container/codec associations
             if (urlLower.includes('.mp4') || urlLower.includes('mp4')) {
-                foundCodecs.push({ type: 'video', codec: 'H.264*', color: '#4da6ff' });
-                foundCodecs.push({ type: 'audio', codec: 'AAC*', color: '#f39c12' });
+                addCodec({ type: 'video', codec: 'H.264*', color: '#4da6ff' });
+                addCodec({ type: 'audio', codec: 'AAC*', color: '#f39c12' });
             } else if (urlLower.includes('.webm')) {
-                foundCodecs.push({ type: 'video', codec: 'VP9*', color: '#2ecc71' });
-                foundCodecs.push({ type: 'audio', codec: 'Opus*', color: '#1abc9c' });
+                addCodec({ type: 'video', codec: 'VP9*', color: '#2ecc71' });
+                addCodec({ type: 'audio', codec: 'Opus*', color: '#1abc9c' });
             } else if (urlLower.includes('.mp3')) {
-                foundCodecs.push({ type: 'audio', codec: 'MP3', color: '#e67e22' });
+                addCodec({ type: 'audio', codec: 'MP3', color: '#e67e22' });
             } else if (urlLower.includes('.m3u8')) {
-                foundCodecs.push({ type: 'video', codec: 'H.264*', color: '#4da6ff' });
+                addCodec({ type: 'video', codec: 'H.264*', color: '#4da6ff' });
             }
         }
 
-        if (foundCodecs.length > 0) {
-            foundCodecs.forEach(c => {
-                const exists = audioState.detectedCodecs.some(existing => existing.codec === c.codec);
-                if (!exists) {
-                    audioState.detectedCodecs.push(c);
-                }
-            });
-            broadcastAudioState();
-        }
+        return { streamType, codecs: foundCodecs };
     }
 
     function routeMediaThroughWebAudio(el) {
@@ -330,6 +369,7 @@
             source.connect(gain);
 
             el.volume = 1;
+            scheduleAudioStateUpdate();
 
             return true;
         } catch (e) {
@@ -345,8 +385,13 @@
             processMediaElement(el);
 
             if (mediaSourceNodes.has(el)) {
-                el.volume = 1;
-            } else if (volume > 1) {
+                if (currentMethod === 'html5') {
+                    // When in HTML5 mode, neutralized gain means element volume should apply.
+                    el.volume = Math.min(1, Math.max(0, volume));
+                } else {
+                    el.volume = 1;
+                }
+            } else if (volume > 1 || currentMethod === 'webaudio') {
                 if (!routeMediaThroughWebAudio(el)) {
                     el.volume = 1;
                 }
@@ -361,11 +406,70 @@
     // Audio State Broadcasting
     // ==========================================
 
+    function pruneClosedContexts() {
+        gainNodes.forEach((gain, ctx) => {
+            if (!ctx || ctx.state === 'closed') {
+                gainNodes.delete(ctx);
+            }
+        });
+    }
+
+    function recomputeAudioState() {
+        pruneClosedContexts();
+
+        const hasSharedContext = !!(sharedContext && sharedContext.state !== 'closed');
+        const nextState = {
+            hasWebAudio: false,
+            hasHTML5Audio: false,
+            hasHTML5Video: false,
+            webAudioContextCount: gainNodes.size + (hasSharedContext ? 1 : 0),
+            html5AudioCount: 0,
+            html5VideoCount: 0,
+            detectedCodecs: [],
+            streamType: null
+        };
+
+        nextState.hasWebAudio = nextState.webAudioContextCount > 0;
+
+        const seenCodecs = new Set();
+        document.querySelectorAll('audio, video').forEach(el => {
+            processMediaElement(el);
+
+            if (el.tagName === 'AUDIO') {
+                nextState.hasHTML5Audio = true;
+                nextState.html5AudioCount++;
+            } else if (el.tagName === 'VIDEO') {
+                nextState.hasHTML5Video = true;
+                nextState.html5VideoCount++;
+            }
+
+            const info = detectMediaInfo(el);
+            if (info.streamType && !nextState.streamType) {
+                nextState.streamType = info.streamType;
+            }
+
+            info.codecs.forEach(codec => {
+                if (seenCodecs.has(codec.codec)) return;
+                seenCodecs.add(codec.codec);
+                nextState.detectedCodecs.push(codec);
+            });
+        });
+
+        return nextState;
+    }
+
     function broadcastAudioState() {
-        window.postMessage({
-            type: 'VOLUME_CONTROL_AUDIO_STATE',
-            audioState: { ...audioState }
-        }, '*');
+        const next = recomputeAudioState();
+        Object.assign(audioState, next);
+
+        const payload = JSON.stringify({
+            audioState: {
+                ...audioState,
+                detectedCodecs: [...audioState.detectedCodecs],
+                streamType: audioState.streamType ? { ...audioState.streamType } : null
+            }
+        });
+        window.dispatchEvent(new CustomEvent(injectorEvents.state, { detail: payload }));
     }
 
     // ==========================================
@@ -376,31 +480,76 @@
         document.querySelectorAll('audio, video').forEach(el => {
             processMediaElement(el);
         });
+        scheduleAudioStateUpdate();
 
         const observer = new MutationObserver((mutations) => {
+            let hasMediaAddedOrChanged = false;
+            let hasMediaRemoved = false;
+
             mutations.forEach(mutation => {
-                mutation.addedNodes.forEach(node => {
-                    if (node.nodeName === 'AUDIO' || node.nodeName === 'VIDEO') {
-                        processMediaElement(node);
-                        if (currentMethod === 'html5' || currentMethod === 'both') {
-                            setHTML5Volume(currentVolume);
+                if (mutation.type === 'attributes') {
+                    const target = mutation.target;
+                    if (target && target.matches) {
+                        if (target.matches('audio, video')) {
+                            processMediaElement(target);
+                            hasMediaAddedOrChanged = true;
+                        } else if (target.matches('source')) {
+                            const mediaParent = target.closest('audio, video');
+                            if (mediaParent) {
+                                processMediaElement(mediaParent);
+                                hasMediaAddedOrChanged = true;
+                            }
                         }
                     }
-                    if (node.querySelectorAll) {
-                        node.querySelectorAll('audio, video').forEach(el => {
-                            processMediaElement(el);
-                            if (currentMethod === 'html5' || currentMethod === 'both') {
-                                setHTML5Volume(currentVolume);
+                    return;
+                }
+
+                if (mutation.type === 'childList') {
+                    mutation.addedNodes.forEach(node => {
+                        if (!node || !node.nodeType) return;
+
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            if (node.matches && node.matches('audio, video')) {
+                                processMediaElement(node);
+                                hasMediaAddedOrChanged = true;
                             }
-                        });
-                    }
-                });
+                            if (node.querySelectorAll) {
+                                const nestedMedia = node.querySelectorAll('audio, video');
+                                if (nestedMedia.length > 0) {
+                                    nestedMedia.forEach(el => processMediaElement(el));
+                                    hasMediaAddedOrChanged = true;
+                                }
+                            }
+                        }
+                    });
+
+                    mutation.removedNodes.forEach(node => {
+                        if (!node || !node.nodeType) return;
+
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            if (node.matches && node.matches('audio, video')) {
+                                hasMediaRemoved = true;
+                            } else if (node.querySelector && node.querySelector('audio, video')) {
+                                hasMediaRemoved = true;
+                            }
+                        }
+                    });
+                }
             });
+
+            if (hasMediaAddedOrChanged) {
+                scheduleHTML5VolumeApply();
+                scheduleAudioStateUpdate();
+            } else if (hasMediaRemoved) {
+                scheduleAudioStateUpdate();
+            }
         });
 
         observer.observe(document.documentElement, {
             childList: true,
-            subtree: true
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['src', 'type']
         });
     }
 
@@ -426,8 +575,11 @@
         console.log(`[Waveform] Volume: ${(volume * 100).toFixed(0)}%, Method: ${method}`);
 
         if (method === 'webaudio') {
+            setHTML5Volume(volume);
             setWebAudioVolume(volume);
         } else if (method === 'html5') {
+            // Neutralize prior Web Audio boosts when switching to HTML5-only control.
+            setWebAudioVolume(1);
             setHTML5Volume(volume);
         } else {
             setWebAudioVolume(volume);
@@ -437,29 +589,37 @@
 
     // Listen for messages from content script
 
-    window.addEventListener('message', (event) => {
-        if (event.source !== window) return;
-
-        if (!event.data || typeof event.data !== 'object') return;
-
-        if (event.data.type === 'VOLUME_CONTROL_SET') {
-            const volume = parseFloat(event.data.volume);
-            const method = String(event.data.method || 'both');
-            if (!isNaN(volume)) {
-                setVolume(volume, method);
+    window.addEventListener(injectorEvents.command, (event) => {
+        let payload = event.detail;
+        if (typeof payload === 'string') {
+            try {
+                payload = JSON.parse(payload);
+            } catch {
+                return;
             }
         }
+        if (!payload || typeof payload !== 'object') return;
 
-        if (event.data.type === 'VOLUME_CONTROL_SET_PERSIST') {
-            persistVolume = !!event.data.persist;
+        if (payload.type === 'set-volume') {
+            const volume = parseFloat(payload.volume);
+            const method = String(payload.method || 'both');
+            if (!Number.isNaN(volume)) {
+                setVolume(volume, method);
+            }
+            return;
+        }
+
+        if (payload.type === 'set-persist') {
+            persistVolume = !!payload.persist;
             console.log(`[Waveform] Persist volume: ${persistVolume}`);
             // Re-apply immediately if turned on
             if (persistVolume) {
                 setVolume(currentVolume, currentMethod);
             }
+            return;
         }
 
-        if (event.data.type === 'VOLUME_CONTROL_GET_STATE') {
+        if (payload.type === 'get-state') {
             broadcastAudioState();
         }
     });
@@ -470,7 +630,7 @@
     // Broadcast initial state
     broadcastAudioState();
 
-    window.postMessage({ type: 'VOLUME_CONTROL_READY' }, '*');
+    window.dispatchEvent(new CustomEvent(injectorEvents.ready));
 
     console.log('[Waveform] Audio injector loaded and ready');
 })();

@@ -53,15 +53,20 @@ async function init() {
         currentDomain = response.domain;
 
         if (response.settings) {
-            const method = globalSettings.rememberMethod && response.settings.method
+            const validMethods = ['webaudio', 'html5', 'both'];
+            const hasRuntimeSettings = !!response.hasRuntimeSettings;
+
+            const method = (hasRuntimeSettings || globalSettings.rememberMethod) && validMethods.includes(response.settings.method)
                 ? response.settings.method
                 : 'both';
 
-            const volume = globalSettings.rememberVolume && response.settings.volume !== undefined
-                ? response.settings.volume
+            const maxVolume = method === 'html5' ? 100 : globalSettings.maxVolume;
+            const rawVolume = Number(response.settings.volume);
+            const volume = (hasRuntimeSettings || globalSettings.rememberVolume) && Number.isFinite(rawVolume)
+                ? Math.max(0, Math.min(maxVolume, rawVolume))
                 : 100;
 
-            currentSettings = { volume, method };
+            currentSettings = { volume: Math.round(volume), method };
         } else {
             currentSettings = { volume: 100, method: 'both' };
         }
@@ -312,13 +317,24 @@ async function setVolume(volume, method) {
             method: currentSettings.method
         });
 
-        // Always save settings if remember option is on, AND include persistVolume state
+        // Keep runtime tab settings in sync so reopening popup won't reset active tab volume.
+        await browser.runtime.sendMessage({
+            type: 'setTabVolume',
+            tabId: currentTabId,
+            volume: currentSettings.volume,
+            method: currentSettings.method
+        });
+
+        // Persist per-domain settings only when remember options are enabled.
         if (globalSettings.rememberMethod || globalSettings.rememberVolume) {
+            const persistedSettings = {
+                method: globalSettings.rememberMethod ? currentSettings.method : 'both',
+                volume: globalSettings.rememberVolume ? currentSettings.volume : 100
+            };
             await browser.runtime.sendMessage({
                 type: 'saveSettings',
                 domain: currentDomain,
-                tabId: currentTabId,
-                settings: currentSettings
+                settings: persistedSettings
             });
         }
 

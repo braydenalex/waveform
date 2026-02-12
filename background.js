@@ -44,28 +44,39 @@ browser.tabs.onRemoved.addListener((tabId) => {
 
 // Handle messages from popup and content scripts
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!message || typeof message.type !== 'string') {
+    return false;
+  }
+
   if (message.type === 'getTabInfo') {
-    browser.tabs.query({ active: true, currentWindow: true }).then(async tabs => {
-      if (tabs[0]) {
-        const tabId = tabs[0].id;
-        const domain = getDomain(tabs[0].url);
+    (async () => {
+      try {
+        const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+        if (tabs[0]) {
+          const tabId = tabs[0].id;
+          const domain = getDomain(tabs[0].url);
 
-        let settings = tabSettings.get(tabId);
+          let settings = tabSettings.get(tabId);
+          const hasRuntimeSettings = !!settings;
 
-        if (!settings) {
-          settings = await getDomainSettings(domain);
-          tabSettings.set(tabId, { ...settings });
+          if (!settings) {
+            settings = await getDomainSettings(domain);
+            tabSettings.set(tabId, { ...settings });
+          }
+
+          sendResponse({
+            tabId: tabId,
+            domain: domain,
+            settings: settings,
+            hasRuntimeSettings: hasRuntimeSettings
+          });
+        } else {
+          sendResponse({ error: 'No active tab' });
         }
-
-        sendResponse({
-          tabId: tabId,
-          domain: domain,
-          settings: settings
-        });
-      } else {
-        sendResponse({ error: 'No active tab' });
+      } catch (err) {
+        sendResponse({ error: err.message || 'Failed to get tab info' });
       }
-    });
+    })();
     return true;
   }
 
@@ -75,43 +86,49 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const updated = { ...current, volume, method };
     setTabSettings(tabId, updated);
     sendResponse({ success: true, settings: updated });
-    return true;
+    return false;
   }
 
   if (message.type === 'getSettings') {
-    getDomainSettings(message.domain).then(sendResponse);
+    getDomainSettings(message.domain)
+      .then(sendResponse)
+      .catch(err => sendResponse({ error: err.message || 'Failed to load settings' }));
     return true;
   }
 
   if (message.type === 'saveSettings') {
-    saveDomainSettings(message.domain, message.settings).then(() => {
-      if (message.tabId) {
-        setTabSettings(message.tabId, message.settings);
-      }
-      sendResponse({ success: true });
-    });
+    saveDomainSettings(message.domain, message.settings)
+      .then(() => {
+        if (message.tabId) {
+          setTabSettings(message.tabId, message.settings);
+        }
+        sendResponse({ success: true });
+      })
+      .catch(err => sendResponse({ success: false, error: err.message || 'Failed to save settings' }));
     return true;
   }
 
   // Get all tabs with audio for cross-tab management
   if (message.type === 'getAllAudioTabs') {
-    browser.tabs.query({}).then(async tabs => {
-      const audioTabs = [];
-      for (const tab of tabs) {
-        if (tab.audible || tabSettings.has(tab.id)) {
-          const domain = getDomain(tab.url);
-          audioTabs.push({
-            tabId: tab.id,
-            title: tab.title,
-            domain: domain,
-            audible: tab.audible,
-            settings: getTabSettings(tab.id),
-            favIconUrl: tab.favIconUrl
-          });
+    browser.tabs.query({})
+      .then(tabs => {
+        const audioTabs = [];
+        for (const tab of tabs) {
+          if (tab.audible || tabSettings.has(tab.id)) {
+            const domain = getDomain(tab.url);
+            audioTabs.push({
+              tabId: tab.id,
+              title: tab.title,
+              domain: domain,
+              audible: tab.audible,
+              settings: getTabSettings(tab.id),
+              favIconUrl: tab.favIconUrl
+            });
+          }
         }
-      }
-      sendResponse({ tabs: audioTabs });
-    });
+        sendResponse({ tabs: audioTabs });
+      })
+      .catch(err => sendResponse({ tabs: [], error: err.message || 'Failed to query tabs' }));
     return true;
   }
 
@@ -132,6 +149,8 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+
+  return false;
 });
 
 console.log('[Waveform] Background script loaded');

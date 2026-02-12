@@ -12,12 +12,40 @@ let audioState = {
     html5AudioCount: 0,
     html5VideoCount: 0
 };
+let lastAudioStateSignature = '';
+
+function generateChannelToken() {
+    if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+        return globalThis.crypto.randomUUID();
+    }
+    const bytes = new Uint8Array(16);
+    if (globalThis.crypto && typeof globalThis.crypto.getRandomValues === 'function') {
+        globalThis.crypto.getRandomValues(bytes);
+        return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    }
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+const injectorChannelToken = generateChannelToken();
+const injectorEvents = {
+    command: `waveform:command:${injectorChannelToken}`,
+    state: `waveform:state:${injectorChannelToken}`,
+    ready: `waveform:ready:${injectorChannelToken}`
+};
+
+function sendInjectorCommand(type, payload = {}) {
+    const detail = JSON.stringify({ type, ...payload });
+    window.dispatchEvent(new CustomEvent(injectorEvents.command, {
+        detail
+    }));
+}
 
 // Inject the audio-injector.js into the page context before anything else
 function injectAudioScript() {
     const script = document.createElement('script');
     script.src = browser.runtime.getURL('audio-injector.js');
     script.async = false;
+    script.dataset.waveformChannel = injectorChannelToken;
 
     const target = document.head || document.documentElement;
     target.insertBefore(script, target.firstChild);
@@ -36,16 +64,15 @@ function injectAudioScript() {
 
 // Request audio state from injector
 function requestAudioState() {
-    window.postMessage({ type: 'VOLUME_CONTROL_GET_STATE' }, '*');
+    sendInjectorCommand('get-state');
 }
 
 // Apply volume to page
 function applyVolume() {
-    window.postMessage({
-        type: 'VOLUME_CONTROL_SET',
+    sendInjectorCommand('set-volume', {
         volume: currentVolume / 100,
         method: currentMethod
-    }, '*');
+    });
 }
 
 // Set volume using the specified method
@@ -57,17 +84,22 @@ function setVolume(volume, method) {
 
 // Listen for messages from popup
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (!message || typeof message.type !== 'string') {
+        return false;
+    }
+
     if (message.type === 'setVolume') {
         setVolume(message.volume, message.method);
         sendResponse({ success: true });
+        return false;
     }
 
     if (message.type === 'setPersist') {
-        window.postMessage({
-            type: 'VOLUME_CONTROL_SET_PERSIST',
+        sendInjectorCommand('set-persist', {
             persist: message.persist
-        }, '*');
+        });
         sendResponse({ success: true });
+        return false;
     }
 
     if (message.type === 'getStatus') {
@@ -77,6 +109,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
             ready: injectorReady,
             audioState: audioState
         });
+        return false;
     }
 
     if (message.type === 'getAudioState') {
@@ -88,34 +121,39 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true; // Keep channel open for async response
     }
 
-    return true;
+    return false;
 });
 
-// Listen for messages from injector
-window.addEventListener('message', (event) => {
-    // Only accept messages from the same window
-    if (event.source !== window) return;
+// Listen for messages from injector via channel-scoped custom events.
+window.addEventListener(injectorEvents.ready, () => {
+    injectorReady = true;
+    console.log('[Waveform] Injector ready');
+});
 
-    // Validate message structure
-    if (!event.data || typeof event.data !== 'object') return;
-    if (typeof event.data.type !== 'string') return;
-
-    if (event.data.type === 'VOLUME_CONTROL_READY') {
-        injectorReady = true;
-        console.log('[Waveform] Injector ready');
+window.addEventListener(injectorEvents.state, (event) => {
+    let payload = event.detail;
+    if (typeof payload === 'string') {
+        try {
+            payload = JSON.parse(payload);
+        } catch {
+            return;
+        }
     }
-
-    if (event.data.type === 'VOLUME_CONTROL_AUDIO_STATE') {
-        if (event.data.audioState && typeof event.data.audioState === 'object') {
-            audioState = event.data.audioState;
-            try {
-                browser.runtime.sendMessage({
-                    type: 'audioStateUpdate',
-                    audioState: audioState
-                });
-            } catch (e) {
-                // Popup might not be open
-            }
+    const nextState = payload && payload.audioState;
+    if (nextState && typeof nextState === 'object') {
+        const signature = JSON.stringify(nextState);
+        if (signature === lastAudioStateSignature) {
+            return;
+        }
+        lastAudioStateSignature = signature;
+        audioState = nextState;
+        try {
+            browser.runtime.sendMessage({
+                type: 'audioStateUpdate',
+                audioState: audioState
+            });
+        } catch (e) {
+            // Popup might not be open
         }
     }
 });
