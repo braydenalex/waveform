@@ -3,6 +3,7 @@
 
 let currentVolume = 100;
 let currentMethod = 'both';
+let nativeVolumeControl = true;
 let injectorReady = false;
 let audioState = {
     hasWebAudio: false,
@@ -30,7 +31,8 @@ const injectorChannelToken = generateChannelToken();
 const injectorEvents = {
     command: `waveform:command:${injectorChannelToken}`,
     state: `waveform:state:${injectorChannelToken}`,
-    ready: `waveform:ready:${injectorChannelToken}`
+    ready: `waveform:ready:${injectorChannelToken}`,
+    nativeTouched: `waveform:native-volume-touched:${injectorChannelToken}`
 };
 
 function sendInjectorCommand(type, payload = {}) {
@@ -50,10 +52,12 @@ function injectAudioScript() {
     const target = document.head || document.documentElement;
     target.insertBefore(script, target.firstChild);
 
-    script.onload = () => {
+    script.onload = async () => {
         injectorReady = true;
         script.remove();
+        await syncSettingsFromBackground();
         applyVolume();
+        applyNativeControl();
         requestAudioState();
     };
 
@@ -71,15 +75,53 @@ function requestAudioState() {
 function applyVolume() {
     sendInjectorCommand('set-volume', {
         volume: currentVolume / 100,
-        method: currentMethod
+        method: currentMethod,
+        nativeVolumeControl
+    });
+}
+
+function applyNativeControl() {
+    sendInjectorCommand('set-native-control', {
+        enabled: nativeVolumeControl
     });
 }
 
 // Set volume using the specified method
 function setVolume(volume, method) {
-    currentVolume = volume;
-    currentMethod = method;
+    const parsedVolume = Number(volume);
+    if (Number.isFinite(parsedVolume)) {
+        currentVolume = parsedVolume;
+    }
+    if (typeof method === 'string') {
+        currentMethod = method;
+    }
     applyVolume();
+}
+
+function setNativeVolumeControl(enabled) {
+    nativeVolumeControl = !!enabled;
+    applyNativeControl();
+    applyVolume();
+}
+
+async function syncSettingsFromBackground() {
+    try {
+        const response = await browser.runtime.sendMessage({ type: 'getTabSettingsForSender' });
+        if (!response || !response.settings) {
+            return;
+        }
+
+        const settings = response.settings;
+        if (Number.isFinite(Number(settings.volume))) {
+            currentVolume = Number(settings.volume);
+        }
+        if (typeof settings.method === 'string') {
+            currentMethod = settings.method;
+        }
+        nativeVolumeControl = !!settings.nativeVolumeControl;
+    } catch (err) {
+        // Ignore startup sync failures and continue with defaults.
+    }
 }
 
 // Listen for messages from popup
@@ -89,7 +131,25 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.type === 'setVolume') {
+        if (Object.prototype.hasOwnProperty.call(message, 'nativeVolumeControl')) {
+            nativeVolumeControl = !!message.nativeVolumeControl;
+            applyNativeControl();
+        }
         setVolume(message.volume, message.method);
+        sendResponse({ success: true });
+        return false;
+    }
+
+    if (message.type === 'setNativeVolumeControl') {
+        setNativeVolumeControl(message.enabled);
+        sendResponse({ success: true });
+        return false;
+    }
+
+    if (message.type === 'nativeVolumeControlChanged') {
+        if (Object.prototype.hasOwnProperty.call(message, 'nativeVolumeControl')) {
+            setNativeVolumeControl(message.nativeVolumeControl);
+        }
         sendResponse({ success: true });
         return false;
     }
@@ -106,6 +166,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({
             volume: currentVolume,
             method: currentMethod,
+            nativeVolumeControl,
             ready: injectorReady,
             audioState: audioState
         });
@@ -128,6 +189,20 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 window.addEventListener(injectorEvents.ready, () => {
     injectorReady = true;
     console.log('[Waveform] Injector ready');
+});
+
+window.addEventListener(injectorEvents.nativeTouched, () => {
+    if (nativeVolumeControl) {
+        return;
+    }
+
+    setNativeVolumeControl(true);
+    browser.runtime.sendMessage({
+        type: 'nativeVolumeTouched',
+        domain: location.hostname
+    }).catch(() => {
+        // Background might be unavailable briefly during reload.
+    });
 });
 
 window.addEventListener(injectorEvents.state, (event) => {

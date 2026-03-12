@@ -26,12 +26,15 @@
     const injectorEvents = {
         command: `waveform:command:${channelToken}`,
         state: `waveform:state:${channelToken}`,
-        ready: `waveform:ready:${channelToken}`
+        ready: `waveform:ready:${channelToken}`,
+        nativeTouched: `waveform:native-volume-touched:${channelToken}`
     };
 
     let currentVolume = 1.0;
     let currentMethod = 'both';
     let persistVolume = false;
+    let nativeVolumeControl = true;
+    let lastNativeTouchTs = 0;
 
     const audioState = {
         hasWebAudio: false,
@@ -67,7 +70,7 @@
                 sharedContext = new Ctx();
                 sharedGain = sharedContext.createGain();
                 sharedGain.connect(sharedContext.destination);
-                sharedGain.gain.value = currentVolume;
+                sharedGain.gain.value = nativeVolumeControl ? 1 : currentVolume;
             }
         }
         return { context: sharedContext, gain: sharedGain };
@@ -85,7 +88,7 @@
         if (html5ApplyTimer !== null) return;
         html5ApplyTimer = window.setTimeout(() => {
             html5ApplyTimer = null;
-            if (currentMethod === 'html5' || currentMethod === 'both') {
+            if (!nativeVolumeControl && (currentMethod === 'html5' || currentMethod === 'both')) {
                 setHTML5Volume(currentVolume);
             }
         }, 50);
@@ -115,7 +118,7 @@
 
     function setupAudioContext(ctx) {
         const gain = ctx.createGain();
-        gain.gain.value = currentVolume;
+        gain.gain.value = nativeVolumeControl ? 1 : currentVolume;
         gainNodes.set(ctx, gain);
         const realDestination = ctx.destination;
 
@@ -182,7 +185,7 @@
 
         // Persistence listeners
         const applyPersistence = () => {
-            if (persistVolume) {
+            if (persistVolume && !nativeVolumeControl) {
                 if (currentMethod === 'html5' || currentMethod === 'both') {
                     if (Math.abs(el.volume - currentVolume) > 0.01 && currentVolume <= 1) {
                         el.volume = currentVolume;
@@ -379,6 +382,8 @@
     }
 
     function setHTML5Volume(volume) {
+        if (nativeVolumeControl) return;
+
         const mediaElements = document.querySelectorAll('audio, video');
 
         mediaElements.forEach(el => {
@@ -554,8 +559,112 @@
     }
 
     // ==========================================
+    // Native Site Volume Detection
+    // ==========================================
+
+    const VOLUME_HINT_ATTRIBUTES = [
+        'aria-label',
+        'aria-valuetext',
+        'title',
+        'name',
+        'id',
+        'class',
+        'data-testid',
+        'data-title',
+        'data-tooltip'
+    ];
+    const VOLUME_HINT_RE = /\b(volume|audio|sound|mute|speaker|loud)\b/i;
+    const KNOWN_VOLUME_SELECTOR = '.ytp-volume-slider, .ytp-volume-slider-handle, .ytp-volume-panel, .ytp-volume-area, .ytp-mute-button';
+
+    function elementHasVolumeHint(el) {
+        if (!el || typeof el.getAttribute !== 'function') return false;
+        for (const attr of VOLUME_HINT_ATTRIBUTES) {
+            const value = el.getAttribute(attr);
+            if (value && VOLUME_HINT_RE.test(String(value))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function isLikelyVolumeControlTarget(target) {
+        if (!(target instanceof Element)) return false;
+
+        if (target.closest(KNOWN_VOLUME_SELECTOR)) {
+            return true;
+        }
+
+        const control = target.closest('input[type="range"], [role="slider"], button');
+        if (!control) return false;
+
+        if (elementHasVolumeHint(control)) {
+            return true;
+        }
+
+        const hintedParent = control.closest(
+            '[class*="volume"], [id*="volume"], [aria-label*="volume" i], [title*="volume" i], [name*="volume" i], [data-testid*="volume" i]'
+        );
+        return !!hintedParent;
+    }
+
+    function onPotentialNativeVolumeTouch(event) {
+        if (nativeVolumeControl || !event || !event.isTrusted) {
+            return;
+        }
+        if (!isLikelyVolumeControlTarget(event.target)) {
+            return;
+        }
+
+        const now = Date.now();
+        if (now - lastNativeTouchTs < 250) {
+            return;
+        }
+        lastNativeTouchTs = now;
+
+        window.dispatchEvent(new CustomEvent(injectorEvents.nativeTouched));
+    }
+
+    function setupNativeVolumeTouchDetector() {
+        const opts = { capture: true, passive: true };
+        document.addEventListener('pointerdown', onPotentialNativeVolumeTouch, opts);
+        document.addEventListener('mousedown', onPotentialNativeVolumeTouch, opts);
+        document.addEventListener('touchstart', onPotentialNativeVolumeTouch, opts);
+        document.addEventListener('input', onPotentialNativeVolumeTouch, true);
+        document.addEventListener('change', onPotentialNativeVolumeTouch, true);
+    }
+
+    // ==========================================
     // Volume Control Interface
     // ==========================================
+
+    function applyCurrentVolumeStrategy() {
+        if (nativeVolumeControl) {
+            setWebAudioVolume(1);
+            return;
+        }
+
+        if (currentMethod === 'webaudio') {
+            setHTML5Volume(currentVolume);
+            setWebAudioVolume(currentVolume);
+        } else if (currentMethod === 'html5') {
+            // Neutralize prior Web Audio boosts when switching to HTML5-only control.
+            setWebAudioVolume(1);
+            setHTML5Volume(currentVolume);
+        } else {
+            setWebAudioVolume(currentVolume);
+            setHTML5Volume(currentVolume);
+        }
+    }
+
+    function setNativeControl(enabled) {
+        const nextValue = !!enabled;
+        if (nativeVolumeControl === nextValue) {
+            return;
+        }
+        nativeVolumeControl = nextValue;
+        console.log(`[Waveform] Native site volume control: ${nativeVolumeControl}`);
+        applyCurrentVolumeStrategy();
+    }
 
     function setVolume(volume, method) {
         if (typeof volume !== 'number' || !isFinite(volume)) {
@@ -572,19 +681,8 @@
         currentVolume = volume;
         currentMethod = method;
 
-        console.log(`[Waveform] Volume: ${(volume * 100).toFixed(0)}%, Method: ${method}`);
-
-        if (method === 'webaudio') {
-            setHTML5Volume(volume);
-            setWebAudioVolume(volume);
-        } else if (method === 'html5') {
-            // Neutralize prior Web Audio boosts when switching to HTML5-only control.
-            setWebAudioVolume(1);
-            setHTML5Volume(volume);
-        } else {
-            setWebAudioVolume(volume);
-            setHTML5Volume(volume);
-        }
+        console.log(`[Waveform] Volume: ${(volume * 100).toFixed(0)}%, Method: ${method}, Native: ${nativeVolumeControl}`);
+        applyCurrentVolumeStrategy();
     }
 
     // Listen for messages from content script
@@ -601,6 +699,9 @@
         if (!payload || typeof payload !== 'object') return;
 
         if (payload.type === 'set-volume') {
+            if (Object.prototype.hasOwnProperty.call(payload, 'nativeVolumeControl')) {
+                setNativeControl(!!payload.nativeVolumeControl);
+            }
             const volume = parseFloat(payload.volume);
             const method = String(payload.method || 'both');
             if (!Number.isNaN(volume)) {
@@ -609,11 +710,16 @@
             return;
         }
 
+        if (payload.type === 'set-native-control') {
+            setNativeControl(!!payload.enabled);
+            return;
+        }
+
         if (payload.type === 'set-persist') {
             persistVolume = !!payload.persist;
             console.log(`[Waveform] Persist volume: ${persistVolume}`);
             // Re-apply immediately if turned on
-            if (persistVolume) {
+            if (persistVolume && !nativeVolumeControl) {
                 setVolume(currentVolume, currentMethod);
             }
             return;
@@ -626,6 +732,7 @@
 
     // Initialize
     setupMediaObserver();
+    setupNativeVolumeTouchDetector();
 
     // Broadcast initial state
     broadcastAudioState();

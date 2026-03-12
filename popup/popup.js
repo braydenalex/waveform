@@ -2,7 +2,7 @@
 
 let currentTabId = null;
 let currentDomain = null;
-let currentSettings = { volume: 100, method: 'both' };
+let currentSettings = { volume: 100, method: 'both', nativeVolumeControl: true };
 let globalSettings = {
     maxVolume: 1000,
     rememberMethod: true,    // On by default
@@ -23,6 +23,8 @@ const maxLabel = document.getElementById('maxLabel');
 const methodWarning = document.getElementById('methodWarning');
 const methodHint = document.getElementById('methodHint');
 const detectionBadges = document.getElementById('detectionBadges');
+const nativeVolumeControlToggle = document.getElementById('nativeVolumeControl');
+const nativeControlHint = document.getElementById('nativeControlHint');
 
 // Settings elements
 const settingsToggle = document.getElementById('settingsToggle');
@@ -66,9 +68,13 @@ async function init() {
                 ? Math.max(0, Math.min(maxVolume, rawVolume))
                 : 100;
 
-            currentSettings = { volume: Math.round(volume), method };
+            currentSettings = {
+                volume: Math.round(volume),
+                method,
+                nativeVolumeControl: response.settings.nativeVolumeControl !== false
+            };
         } else {
-            currentSettings = { volume: 100, method: 'both' };
+            currentSettings = { volume: 100, method: 'both', nativeVolumeControl: true };
         }
 
         // Update UI
@@ -76,6 +82,7 @@ async function init() {
         updateVolumeUI(currentSettings.volume);
         updateMethodUI(currentSettings.method);
         updateMaxVolumeUI();
+        updateNativeControlUI(currentSettings.nativeVolumeControl);
 
         setVolume(currentSettings.volume, currentSettings.method);
 
@@ -181,6 +188,11 @@ function updateAudioDetectionUI(state) {
 browser.runtime.onMessage.addListener((message) => {
     if (message.type === 'audioStateUpdate') {
         updateAudioDetectionUI(message.audioState);
+        return;
+    }
+
+    if (message.type === 'nativeVolumeControlChanged' && message.tabId === currentTabId) {
+        updateNativeControlUI(message.nativeVolumeControl);
     }
 });
 
@@ -304,8 +316,56 @@ function updateMethodUI(method) {
     }
 }
 
+function updateNativeControlUI(enabled) {
+    const isEnabled = !!enabled;
+    currentSettings.nativeVolumeControl = isEnabled;
+    nativeVolumeControlToggle.checked = isEnabled;
+    mainPanel.classList.toggle('native-control-enabled', isEnabled);
+
+    const controlsToDisable = [volumeSlider, ...methodBtns, ...quickBtns];
+    controlsToDisable.forEach(control => {
+        control.disabled = isEnabled;
+    });
+
+    if (isEnabled) {
+        nativeControlHint.textContent = 'Site controls are active for this domain. Waveform is no longer overriding volume here.';
+    } else {
+        nativeControlHint.textContent = 'Waveform override is active for this domain. Native site controls are normally on by default.';
+    }
+}
+
+async function setNativeVolumeControl(enabled, options = {}) {
+    if (!Number.isInteger(currentTabId)) return;
+
+    updateNativeControlUI(enabled);
+
+    try {
+        await browser.tabs.sendMessage(currentTabId, {
+            type: 'setNativeVolumeControl',
+            enabled: currentSettings.nativeVolumeControl
+        });
+    } catch (err) {
+        console.error('Error notifying tab about native volume control state:', err);
+    }
+
+    try {
+        await browser.runtime.sendMessage({
+            type: 'setNativeVolumeControl',
+            tabId: currentTabId,
+            domain: currentDomain,
+            enabled: currentSettings.nativeVolumeControl,
+            persist: options.persist !== false,
+            source: options.source || 'popup'
+        });
+    } catch (err) {
+        console.error('Error saving native volume control state:', err);
+    }
+}
+
 // Send volume update to content script
 async function setVolume(volume, method) {
+    if (!Number.isInteger(currentTabId)) return;
+
     currentSettings.volume = volume;
     currentSettings.method = method || currentSettings.method;
 
@@ -314,7 +374,8 @@ async function setVolume(volume, method) {
         await browser.tabs.sendMessage(currentTabId, {
             type: 'setVolume',
             volume: volume,
-            method: currentSettings.method
+            method: currentSettings.method,
+            nativeVolumeControl: currentSettings.nativeVolumeControl
         });
 
         // Keep runtime tab settings in sync so reopening popup won't reset active tab volume.
@@ -375,6 +436,11 @@ quickBtns.forEach(btn => {
         updateVolumeUI(volume);
         setVolume(volume);
     });
+});
+
+// Event: Native site volume toggle
+nativeVolumeControlToggle.addEventListener('change', (e) => {
+    setNativeVolumeControl(e.target.checked, { source: 'popup', persist: true });
 });
 
 // Event: Settings toggle
@@ -448,6 +514,7 @@ resetBtn.addEventListener('click', async () => {
 document.addEventListener('keydown', (e) => {
     // Only work when main panel is visible
     if (settingsPanel.style.display !== 'none') return;
+    if (currentSettings.nativeVolumeControl) return;
 
     const maxVol = currentSettings.method === 'html5' ? 100 : globalSettings.maxVolume;
     let newVolume = currentSettings.volume;

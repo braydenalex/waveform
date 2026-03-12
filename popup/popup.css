@@ -326,6 +326,39 @@ body {
   line-height: 1.4;
 }
 
+/* Native site volume toggle */
+.native-control-section {
+  margin-bottom: calc(16px * var(--spacing-unit));
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+
+.native-control-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.native-control-label {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.native-control-hint {
+  font-size: var(--font-size-xs);
+  margin-top: 6px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.main-panel.native-control-enabled .native-control-section {
+  border-color: var(--accent-primary);
+}
+
 /* Quick Buttons */
 .quick-buttons {
   display: flex;
@@ -512,5 +545,18 @@ input:checked+.toggle-slider:before {
 
 /* HTML5 mode - disabled slider appearance */
 .volume-slider.limited {
+  opacity: 0.7;
+}
+
+.volume-slider:disabled,
+.method-btn:disabled,
+.quick-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.main-panel.native-control-enabled .volume-display,
+.main-panel.native-control-enabled .method-section,
+.main-panel.native-control-enabled .quick-buttons {
   opacity: 0.7;
 }
