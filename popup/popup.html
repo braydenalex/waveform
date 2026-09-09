@@ -26,6 +26,12 @@
       </span>
     </div>
 
+    <div class="playback-status" id="playbackStatus" role="status" aria-live="polite">Connecting to the player…</div>
+    <div class="recovery-controls">
+      <button id="restoreAudioBtn" class="back-btn">Restore site audio</button>
+      <button id="reloadPageBtn" class="back-btn" hidden>Reload page</button>
+    </div>
+
     <!-- Main Volume Control Panel -->
     <div class="main-panel" id="mainPanel">
       <div class="volume-section">
@@ -34,7 +40,8 @@
           <span class="volume-percent">%</span>
         </div>
 
-        <input type="range" id="volumeSlider" class="volume-slider" min="0" max="1000" value="100" step="1">
+        <div class="volume-caption" id="volumeCaption">Requested volume</div>
+        <input aria-label="Requested volume" type="range" id="volumeSlider" class="volume-slider" min="0" max="1000" value="100" step="1">
 
         <div class="volume-labels">
           <span>0%</span>
@@ -60,7 +67,7 @@
           ⚠️ HTML5 method is limited to 100% - can only lower audio
         </div>
         <div class="method-hint" id="methodHint">
-          "Both" dynamically applies all available methods.
+          "Both" uses ordinary volume control and boosts only compatible players.
         </div>
       </div>
 

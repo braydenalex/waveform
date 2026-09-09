@@ -560,3 +560,23 @@ input:checked+.toggle-slider:before {
 .main-panel.native-control-enabled .quick-buttons {
   opacity: 0.7;
 }
+
+
+.playback-status {
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+.recovery-controls { margin-bottom: 16px; }
+.volume-caption {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  margin: -4px 0 10px;
+}
+[hidden] { display: none !important; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 3px; }

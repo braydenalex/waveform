@@ -27,6 +27,7 @@
         command: `waveform:command:${channelToken}`,
         state: `waveform:state:${channelToken}`,
         ready: `waveform:ready:${channelToken}`,
+        media: `waveform:media:${channelToken}`,
         nativeTouched: `waveform:native-volume-touched:${channelToken}`
     };
 
@@ -52,29 +53,22 @@
     // METHOD 1: Web Audio API - Capture & Route
     // ==========================================
 
-    const gainNodes = new Map();
-    const mediaSourceNodes = new WeakMap();
+    const pageContexts = new Map();
+    const mediaRecords = new WeakMap();
+    const trackedMedia = new Set();
+    const siteMediaContexts = new WeakMap();
     let html5ApplyTimer = null;
     let stateBroadcastTimer = null;
-
-    const OriginalAudioContext = window.AudioContext;
-    const OriginalWebkitAudioContext = window.webkitAudioContext;
-
+    let settingsRevision = -1;
     let sharedContext = null;
-    let sharedGain = null;
+    let resumePending = null;
+    let contextFailure = null;
+    let resumeTimer = null;
 
-    function getSharedContext() {
-        if (!sharedContext || sharedContext.state === 'closed') {
-            const Ctx = OriginalAudioContext || OriginalWebkitAudioContext;
-            if (Ctx) {
-                sharedContext = new Ctx();
-                sharedGain = sharedContext.createGain();
-                sharedGain.connect(sharedContext.destination);
-                sharedGain.gain.value = nativeVolumeControl ? 1 : currentVolume;
-            }
-        }
-        return { context: sharedContext, gain: sharedGain };
-    }
+    const OriginalAudioContext = window.AudioContext || window.webkitAudioContext;
+    const OriginalConnect = window.AudioNode?.prototype.connect;
+    const OriginalDisconnect = window.AudioNode?.prototype.disconnect;
+    const OriginalCreateSource = OriginalAudioContext?.prototype.createMediaElementSource;
 
     function scheduleAudioStateUpdate() {
         if (stateBroadcastTimer !== null) return;
@@ -88,120 +82,327 @@
         if (html5ApplyTimer !== null) return;
         html5ApplyTimer = window.setTimeout(() => {
             html5ApplyTimer = null;
-            if (!nativeVolumeControl && (currentMethod === 'html5' || currentMethod === 'both')) {
-                setHTML5Volume(currentVolume);
-            }
+            applyCurrentVolumeStrategy();
         }, 50);
     }
 
-    if (OriginalAudioContext) {
-        window.AudioContext = function (...args) {
-            const ctx = new OriginalAudioContext(...args);
-            setupAudioContext(ctx);
-            scheduleAudioStateUpdate();
-
-            return ctx;
-        };
-        window.AudioContext.prototype = OriginalAudioContext.prototype;
+    function pageGraphEnabled() {
+        return !nativeVolumeControl && currentMethod !== 'html5';
     }
 
-    if (OriginalWebkitAudioContext) {
-        window.webkitAudioContext = function (...args) {
-            const ctx = new OriginalWebkitAudioContext(...args);
-            setupAudioContext(ctx);
-            scheduleAudioStateUpdate();
-
-            return ctx;
-        };
-        window.webkitAudioContext.prototype = OriginalWebkitAudioContext.prototype;
-    }
-
-    function setupAudioContext(ctx) {
-        const gain = ctx.createGain();
-        gain.gain.value = nativeVolumeControl ? 1 : currentVolume;
-        gainNodes.set(ctx, gain);
-        const realDestination = ctx.destination;
-
-        gain.connect(realDestination);
-
-        ctx._realDestination = realDestination;
-        ctx._volumeGain = gain;
-
-        const cleanup = () => {
+    function trackContext(ctx) {
+        if (ctx === sharedContext || ctx.state === 'closed') return null;
+        if (pageContexts.has(ctx)) return pageContexts.get(ctx);
+        const record = { gain: null, edges: new Map() };
+        pageContexts.set(ctx, record);
+        const onState = () => {
             if (ctx.state === 'closed') {
-                gainNodes.delete(ctx);
-                ctx.removeEventListener('statechange', cleanup);
+                pageContexts.delete(ctx);
+                ctx.removeEventListener('statechange', onState);
             }
+            scheduleAudioStateUpdate();
         };
-        ctx.addEventListener('statechange', cleanup);
+        ctx.addEventListener('statechange', onState);
+        scheduleAudioStateUpdate();
+        return record;
     }
 
-    const OriginalConnect = AudioNode.prototype.connect;
-    AudioNode.prototype.connect = function (destination, ...args) {
-        if (destination instanceof AudioDestinationNode) {
-            const ctx = this.context;
-            const gain = gainNodes.get(ctx);
-            if (gain && this !== gain) {
-                return OriginalConnect.call(this, gain, ...args);
-            }
+    function contextGain(ctx, record) {
+        if (!record.gain) {
+            const gain = ctx.createGain();
+            gain.channelCount = ctx.destination.channelCount;
+            gain.channelCountMode = 'explicit';
+            gain.gain.value = pageGraphEnabled() ? currentVolume : 1;
+            OriginalConnect.call(gain, ctx.destination);
+            record.gain = gain;
         }
-        return OriginalConnect.call(this, destination, ...args);
-    };
+        return record.gain;
+    }
 
-    function setWebAudioVolume(volume) {
-        gainNodes.forEach((gain, ctx) => {
-            if (!ctx || ctx.state === 'closed') {
-                gainNodes.delete(ctx);
-                return;
+    // Record only destination edges. All other graph operations use native APIs.
+    // Use the same physical destination for connect AND every disconnect overload.
+    if (OriginalConnect && OriginalDisconnect) {
+        window.AudioNode.prototype.connect = function (destination, ...args) {
+            const ctx = this.context;
+            if (destination !== ctx.destination || ctx === sharedContext) {
+                return OriginalConnect.call(this, destination, ...args);
             }
-            if (gain && gain.gain) {
-                gain.gain.value = volume;
+            const record = trackContext(ctx);
+            if (!record || this === record.gain) {
+                return OriginalConnect.call(this, destination, ...args);
+            }
+            const redirected = pageGraphEnabled();
+            const physical = redirected ? contextGain(ctx, record) : destination;
+            OriginalConnect.call(this, physical, ...args);
+            const output = Number(args[0] ?? 0) >>> 0;
+            const input = Number(args[1] ?? 0) >>> 0;
+            const edges = record.edges.get(this) || [];
+            if (!edges.some(edge => edge.output === output && edge.input === input)) {
+                edges.push({ output, input, redirected });
+                record.edges.set(this, edges);
+            }
+            if (this.mediaElement) siteMediaContexts.set(this.mediaElement, ctx);
+            scheduleAudioStateUpdate();
+            return destination;
+        };
+        window.AudioNode.prototype.disconnect = function (...args) {
+            const ctx = this.context;
+            const record = pageContexts.get(ctx);
+            const edges = record?.edges.get(this);
+            if (!edges) return OriginalDisconnect.apply(this, args);
+            const destination = args[0];
+            const destinationOverload = destination instanceof window.AudioNode;
+            const physicalArgs = [...args];
+            if (destination === ctx.destination && edges[0].redirected) {
+                physicalArgs[0] = record.gain;
+            }
+            // Native validation must succeed before changing our bookkeeping.
+            const result = OriginalDisconnect.apply(this, physicalArgs);
+            let remaining = edges;
+            if (!args.length) remaining = [];
+            else if (!destinationOverload && !(window.AudioParam && destination instanceof window.AudioParam)) {
+                const output = Number(destination) >>> 0;
+                remaining = edges.filter(edge => edge.output !== output);
+            } else if (destination === ctx.destination) {
+                remaining = edges.filter(edge =>
+                    (args.length > 1 && edge.output !== (Number(args[1]) >>> 0)) ||
+                    (args.length > 2 && edge.input !== (Number(args[2]) >>> 0)));
+            }
+            if (remaining.length) record.edges.set(this, remaining);
+            else record.edges.delete(this);
+            scheduleAudioStateUpdate();
+            return result;
+        };
+    }
+
+    // Preserve native construction, subclassing, static members, and call errors.
+    for (const name of ['AudioContext', 'webkitAudioContext']) {
+        const Original = window[name];
+        if (!Original) continue;
+        window[name] = new Proxy(Original, {
+            construct(target, args, newTarget) {
+                const ctx = Reflect.construct(target, args, newTarget);
+                trackContext(ctx);
+                return ctx;
             }
         });
-        if (sharedGain) {
-            sharedGain.gain.value = volume;
-        }
+    }
+    if (OriginalCreateSource) {
+        OriginalAudioContext.prototype.createMediaElementSource = function (el) {
+            const source = OriginalCreateSource.call(this, el);
+            if (this !== sharedContext) siteMediaContexts.set(el, this);
+            return source;
+        };
     }
 
-    // ==========================================
-    // METHOD 2: HTML5 Media Element Control
-    // ==========================================
+    function updatePageGraphs() {
+        pageContexts.forEach((record, ctx) => {
+            if (ctx.state === 'closed') return;
+            const redirected = pageGraphEnabled();
+            record.failure = null;
+            if (record.gain) record.gain.gain.value = redirected ? currentVolume : 1;
+            record.edges.forEach((edges, node) => {
+                for (const edge of edges) {
+                    if (edge.redirected === redirected) continue;
+                    const oldTarget = edge.redirected ? record.gain : ctx.destination;
+                    const newTarget = redirected ? contextGain(ctx, record) : ctx.destination;
+                    try {
+                        OriginalConnect.call(node, newTarget, edge.output, edge.input);
+                        OriginalDisconnect.call(node, oldTarget, edge.output, edge.input);
+                        edge.redirected = redirected;
+                    } catch {
+                        // Leave the original path intact if rewiring fails.
+                        try { OriginalDisconnect.call(node, newTarget, edge.output, edge.input); } catch {}
+                        record.failure = 'graph-unavailable';
+                    }
+                }
+            });
+        });
+    }
 
-    const processedMedia = new WeakSet();
+    function getSharedContext() {
+        if (!OriginalAudioContext || !OriginalCreateSource) return null;
+        // An element cannot be attached again after its context is closed.
+        if (sharedContext) return sharedContext;
+        sharedContext = new OriginalAudioContext();
+        sharedContext.addEventListener('statechange', () => {
+            if (sharedContext.state === 'running') contextFailure = null;
+            if (sharedContext.state === 'closed') contextFailure = 'context-closed';
+            scheduleHTML5VolumeApply();
+            scheduleAudioStateUpdate();
+        });
+        return sharedContext;
+    }
+
+    function resumeSharedContext(userGesture = false) {
+        const ctx = sharedContext;
+        if (!ctx || ctx.state === 'running') return Promise.resolve(true);
+        if (ctx.state === 'closed') {
+            contextFailure = 'context-closed';
+            return Promise.resolve(false);
+        }
+        if (resumePending && !userGesture) return resumePending;
+        contextFailure = 'interaction-required';
+        scheduleAudioStateUpdate();
+        // A blocked resume can remain pending indefinitely. Report it immediately;
+        // attach nothing until it actually resolves and the context is running.
+        let resumed;
+        try { resumed = ctx.resume(); } catch (error) { resumed = Promise.reject(error); }
+        const pending = Promise.resolve(resumed).then(() => {
+            contextFailure = ctx.state === 'running' ? null : 'interaction-required';
+            return ctx.state === 'running';
+        }, () => {
+            contextFailure = 'resume-failed';
+            return false;
+        }).finally(() => {
+            if (resumePending === pending) resumePending = null;
+            scheduleAudioStateUpdate();
+        });
+        resumePending = pending;
+        return pending;
+    }
+
+    function sourceKey(el) {
+        return `${el.currentSrc || el.src || ''}|${el.crossOrigin ?? 'no-cors'}`;
+    }
+
+    function writeElementVolume(el, volume) {
+        const record = processMediaElement(el);
+        const next = Math.min(1, Math.max(0, volume));
+        if (el.volume === next) return;
+        if (record.lastWrite === null || el.volume !== record.lastWrite) record.originalVolume = el.volume;
+        record.lastWrite = next;
+        el.volume = next;
+    }
+
+    function restoreElementVolume(el, record) {
+        if (record.lastWrite !== null && el.volume === record.lastWrite) {
+            el.volume = record.originalVolume;
+        }
+        record.lastWrite = null;
+    }
 
     function processMediaElement(el) {
-        if (processedMedia.has(el)) return;
-        processedMedia.add(el);
-
-        const onMediaChange = () => {
-            scheduleAudioStateUpdate();
+        if (mediaRecords.has(el)) { trackedMedia.add(el); return mediaRecords.get(el); }
+        const record = {
+            originalVolume: el.volume, lastWrite: null, source: null, gain: null,
+            pending: false, failedKey: null, failure: null, reloadRequired: false,
+            encrypted: !!el.mediaKeys, loadCors: null, loadKey: null, corsVerified: false
         };
-
-        el.addEventListener('loadedmetadata', onMediaChange);
-        el.addEventListener('loadeddata', onMediaChange);
-        el.addEventListener('durationchange', onMediaChange);
-        el.addEventListener('emptied', onMediaChange);
-        el.addEventListener('error', onMediaChange);
-
-        // Persistence listeners
-        const applyPersistence = () => {
-            if (persistVolume && !nativeVolumeControl) {
-                if (currentMethod === 'html5' || currentMethod === 'both') {
-                    if (Math.abs(el.volume - currentVolume) > 0.01 && currentVolume <= 1) {
-                        el.volume = currentVolume;
-                    }
+        mediaRecords.set(el, record);
+        trackedMedia.add(el);
+        const onLoadStart = () => {
+            record.loadCors = el.crossOrigin;
+            record.loadKey = el.currentSrc || el.src;
+            record.corsVerified = false;
+            record.encrypted = !!el.mediaKeys;
+            record.failedKey = null;
+            record.failure = null;
+        };
+        el.addEventListener('loadstart', onLoadStart);
+        el.addEventListener('encrypted', () => {
+            record.encrypted = true;
+            scheduleHTML5VolumeApply();
+        });
+        el.addEventListener('loadeddata', () => {
+            record.corsVerified = record.loadCors !== null && record.loadCors === el.crossOrigin &&
+                record.loadKey === (el.currentSrc || el.src);
+        });
+        for (const event of ['loadedmetadata', 'loadeddata', 'durationchange', 'emptied', 'error', 'play', 'playing', 'pause', 'ended']) {
+            el.addEventListener(event, () => {
+                if (event === 'emptied') {
+                    record.corsVerified = false;
+                    record.failedKey = null;
                 }
-                if (currentMethod === 'webaudio' || currentMethod === 'both') {
-                    if (currentVolume > 1) {
-                        routeMediaThroughWebAudio(el);
-                    }
+                if (event === 'play' || event === 'playing') {
+                    trackedMedia.add(el);
+                    recoverContext();
                 }
+                // Route health is always maintained, independently of persistence.
+                if (event === 'play' || event === 'playing' || record.source || persistVolume || record.pending || currentVolume > 1) scheduleHTML5VolumeApply();
+                scheduleAudioStateUpdate();
+            });
+        }
+        el.addEventListener('volumechange', () => {
+            if (record.lastWrite !== null && el.volume !== record.lastWrite) {
+                record.originalVolume = el.volume;
+                record.lastWrite = null;
             }
-        };
+            scheduleAudioStateUpdate();
+        });
+        return record;
+    }
 
-        el.addEventListener('loadeddata', applyPersistence);
-        el.addEventListener('durationchange', applyPersistence);
-        el.addEventListener('play', applyPersistence);
+    // Audio created with new Audio(), or played inside a shadow tree, need not
+    // appear in document.querySelectorAll(). Preserve native play's exact return
+    // value and errors, then register the element without changing its source.
+    function observePlayer(el, playing = false) {
+        try {
+            processMediaElement(el);
+            if (playing) applyMedia(el);
+            scheduleAudioStateUpdate();
+        } catch { /* Discovery must not change the site's API behavior. */ }
+        return el;
+    }
+    const OriginalPlay = window.HTMLMediaElement?.prototype.play;
+    if (OriginalPlay) {
+        window.HTMLMediaElement.prototype.play = function (...args) {
+            const result = Reflect.apply(OriginalPlay, this, args);
+            observePlayer(this, true);
+            return result;
+        };
+    }
+    if (window.Audio) {
+        window.Audio = new Proxy(window.Audio, {
+            construct(target, args, newTarget) {
+                return observePlayer(Reflect.construct(target, args, newTarget));
+            },
+            apply(target, receiver, args) {
+                return observePlayer(Reflect.apply(target, receiver, args));
+            }
+        });
+    }
+    window.addEventListener(injectorEvents.media, event => {
+        const element = event.detail?.element;
+        if (window.HTMLMediaElement && element instanceof window.HTMLMediaElement) {
+            observePlayer(element, !element.paused);
+        }
+    });
+
+    function hasNoAudioTrack(el) {
+        // Firefox exposes whether a loaded video actually contains audio. A
+        // canvas/cover animation must not stand in for a separate music player.
+        return el.tagName === 'VIDEO' && el.readyState >= 1 && el.mozHasAudio === false;
+    }
+
+    function routeEligibility(el, record) {
+        if (!OriginalAudioContext || !OriginalCreateSource) return 'web-audio-unavailable';
+        if (hasNoAudioTrack(el)) return 'no-audio-track';
+        if (record.encrypted || el.mediaKeys) return 'protected-media';
+        if (el.readyState < 2 || el.error) return 'media-not-ready';
+        if (el.srcObject) {
+            // A MediaStream already supplied to the page does not perform a
+            // cross-origin media URL fetch. Duration/currentSrc do not describe it.
+            if (typeof MediaStream !== 'undefined' && el.srcObject instanceof MediaStream) {
+                return el.srcObject.getAudioTracks().some(track => track.readyState === 'live')
+                    ? null : 'media-not-ready';
+            }
+            return 'stream-unverified';
+        }
+        if (!el.currentSrc) return 'media-not-ready';
+        let url;
+        try { url = new URL(el.currentSrc, location.href); } catch { return 'source-unverified'; }
+        if (url.protocol === 'blob:') {
+            // Same-origin object URLs include MediaSource/HLS/DASH playback.
+            // Their origin is established locally, independently of crossorigin.
+            const pageOrigin = new URL(location.href).origin;
+            return pageOrigin !== 'null' && url.origin === pageOrigin ? null : 'cors-unverified';
+        }
+        if (!['http:', 'https:'].includes(url.protocol)) return 'source-unverified';
+        // Live duration is not a security signal. Direct media still needs a
+        // verified CORS load because even a same-origin URL can redirect.
+        if (!record.corsVerified) return 'cors-unverified';
+        return null;
     }
 
     // ==========================================
@@ -352,129 +553,187 @@
         return { streamType, codecs: foundCodecs };
     }
 
-    function routeMediaThroughWebAudio(el) {
+    async function routeMediaThroughWebAudio(el, record) {
+        if (record.source || record.pending || record.failedKey === sourceKey(el)) return;
+        const failure = routeEligibility(el, record);
+        if (failure) { record.failure = failure; return; }
+        const key = sourceKey(el);
+        const revision = settingsRevision;
+        record.pending = true;
         try {
-            if (mediaSourceNodes.has(el)) {
-                return true;
+            const ctx = getSharedContext();
+            if (!ctx || !(await resumeSharedContext())) return;
+            if (nativeVolumeControl || currentMethod === 'html5' ||
+                (currentMethod === 'both' && currentVolume <= 1) ||
+                revision !== settingsRevision || key !== sourceKey(el) || routeEligibility(el, record)) return;
+            record.gain = ctx.createGain();
+            record.gain.gain.value = currentVolume;
+            // Build the output path first; attachment is the irreversible step.
+            OriginalConnect.call(record.gain, ctx.destination);
+            record.source = OriginalCreateSource.call(ctx, el);
+            OriginalConnect.call(record.source, record.gain);
+            record.failure = null;
+            writeElementVolume(el, 1);
+        } catch {
+            record.failedKey = key;
+            record.failure = 'routing-failed';
+            record.reloadRequired = !!record.source;
+            if (!record.source && record.gain) {
+                OriginalDisconnect.call(record.gain);
+                record.gain = null;
             }
-
-            const { context, gain } = getSharedContext();
-            if (!context) return false;
-
-            // Resume context if suspended (autoplay policy)
-            if (context.state === 'suspended') {
-                context.resume();
-            }
-
-            const source = context.createMediaElementSource(el);
-            mediaSourceNodes.set(el, source);
-
-            source.connect(gain);
-
-            el.volume = 1;
+        } finally {
+            record.pending = false;
+            // Reconcile settings changed while resume was pending, without looping
+            // on failures or automatically retrying rejected resume promises.
+            if (revision !== settingsRevision && !record.failure) scheduleHTML5VolumeApply();
             scheduleAudioStateUpdate();
-
-            return true;
-        } catch (e) {
-            console.log('[Waveform] Cannot route media through Web Audio:', e.message);
-            return false;
         }
     }
 
-    function setHTML5Volume(volume) {
-        if (nativeVolumeControl) return;
-
-        const mediaElements = document.querySelectorAll('audio, video');
-
-        mediaElements.forEach(el => {
-            processMediaElement(el);
-
-            if (mediaSourceNodes.has(el)) {
-                if (currentMethod === 'html5') {
-                    // When in HTML5 mode, neutralized gain means element volume should apply.
-                    el.volume = Math.min(1, Math.max(0, volume));
-                } else {
-                    el.volume = 1;
-                }
-            } else if (volume > 1 || currentMethod === 'webaudio') {
-                if (!routeMediaThroughWebAudio(el)) {
-                    el.volume = 1;
-                }
-            } else {
-                // Simple volume (0-100%)
-                el.volume = Math.min(1, Math.max(0, volume));
-            }
+    function recoverContext(userGesture = false) {
+        if (!sharedContext || sharedContext.state === 'running') return;
+        if (resumeTimer !== null && !userGesture) return;
+        resumeTimer = window.setTimeout(() => { resumeTimer = null; }, 250);
+        resumeSharedContext(userGesture).then(running => {
+            if (running) scheduleHTML5VolumeApply();
         });
     }
 
-    // ==========================================
-    // Audio State Broadcasting
-    // ==========================================
-
-    function pruneClosedContexts() {
-        gainNodes.forEach((gain, ctx) => {
-            if (!ctx || ctx.state === 'closed') {
-                gainNodes.delete(ctx);
+    function applyMedia(el) {
+        const record = processMediaElement(el);
+        const eligibility = routeEligibility(el, record);
+        if (!record.source && record.failedKey !== sourceKey(el)) record.failure = null;
+        if (record.source) {
+            if (sharedContext.state === 'closed') {
+                record.failure = 'context-closed';
+                record.reloadRequired = true;
+            } else if (eligibility && !['media-not-ready', 'no-audio-track'].includes(eligibility)) {
+                record.failure = eligibility;
+                record.reloadRequired = true;
             }
-        });
+            if (record.reloadRequired) record.gain.gain.value = 1;
+        }
+        if (nativeVolumeControl || hasNoAudioTrack(el)) {
+            if (record.gain) record.gain.gain.value = 1;
+            restoreElementVolume(el, record);
+            return;
+        }
+        const useGraph = currentMethod !== 'html5' && (currentMethod === 'webaudio' || currentVolume > 1);
+        const siteContext = siteMediaContexts.get(el);
+        if (siteContext) {
+            // The site already owns this media source. Do not attach it a second
+            // time or attenuate both its element and the context destination.
+            writeElementVolume(el, pageGraphEnabled() && pageContexts.get(siteContext)?.edges.size ? 1 : Math.min(1, currentVolume));
+            return;
+        }
+        if (record.source && useGraph && !record.reloadRequired) {
+            record.gain.gain.value = currentVolume;
+            writeElementVolume(el, 1);
+        } else {
+            if (record.gain) record.gain.gain.value = 1;
+            writeElementVolume(el, Math.min(1, currentVolume));
+            if (useGraph && !record.reloadRequired && !record.source && !contextFailure) {
+                void routeMediaThroughWebAudio(el, record);
+            }
+        }
+    }
+
+    function currentMedia() {
+        document.querySelectorAll('audio, video').forEach(processMediaElement);
+        for (const el of trackedMedia) {
+            const record = mediaRecords.get(el);
+            if (!el.isConnected && el.paused) {
+                restoreElementVolume(el, record);
+                if (record.gain) record.gain.gain.value = 1;
+                trackedMedia.delete(el);
+            }
+        }
+        return [...trackedMedia];
     }
 
     function recomputeAudioState() {
-        pruneClosedContexts();
-
-        const hasSharedContext = !!(sharedContext && sharedContext.state !== 'closed');
+        const states = [];
         const nextState = {
-            hasWebAudio: false,
-            hasHTML5Audio: false,
-            hasHTML5Video: false,
-            webAudioContextCount: gainNodes.size + (hasSharedContext ? 1 : 0),
-            html5AudioCount: 0,
-            html5VideoCount: 0,
-            detectedCodecs: [],
-            streamType: null
+            hasWebAudio: pageContexts.size > 0,
+            hasHTML5Audio: false, hasHTML5Video: false,
+            webAudioContextCount: pageContexts.size,
+            html5AudioCount: 0, html5VideoCount: 0,
+            detectedCodecs: [], streamType: null,
+            ready: true, effectiveMethod: nativeVolumeControl ? 'site' : 'html5',
+            boostAvailable: false, failureReason: null, reloadRequired: false,
+            requestedVolume: currentVolume * 100, effectiveVolume: null
         };
-
-        nextState.hasWebAudio = nextState.webAudioContextCount > 0;
-
         const seenCodecs = new Set();
-        document.querySelectorAll('audio, video').forEach(el => {
-            processMediaElement(el);
-
-            if (el.tagName === 'AUDIO') {
-                nextState.hasHTML5Audio = true;
-                nextState.html5AudioCount++;
-            } else if (el.tagName === 'VIDEO') {
-                nextState.hasHTML5Video = true;
-                nextState.html5VideoCount++;
-            }
-
+        currentMedia().forEach(el => {
+            const record = processMediaElement(el);
+            if (el.tagName === 'AUDIO') nextState.html5AudioCount++;
+            else nextState.html5VideoCount++;
             const info = detectMediaInfo(el);
-            if (info.streamType && !nextState.streamType) {
-                nextState.streamType = info.streamType;
-            }
-
+            if (info.streamType && !nextState.streamType) nextState.streamType = info.streamType;
             info.codecs.forEach(codec => {
-                if (seenCodecs.has(codec.codec)) return;
-                seenCodecs.add(codec.codec);
-                nextState.detectedCodecs.push(codec);
+                if (!seenCodecs.has(codec.codec)) {
+                    seenCodecs.add(codec.codec);
+                    nextState.detectedCodecs.push(codec);
+                }
+            });
+            const siteContext = siteMediaContexts.get(el);
+            const siteGraph = siteContext && pageContexts.get(siteContext)?.edges.size > 0;
+            if (hasNoAudioTrack(el) && !record.reloadRequired) return;
+            const failure = record.failure || routeEligibility(el, record);
+            const graph = (record.source && !record.reloadRequired && sharedContext.state === 'running') ||
+                (siteGraph && siteContext.state === 'running' && pageGraphEnabled());
+            const method = nativeVolumeControl ? 'site' : graph && currentMethod !== 'html5' &&
+                (siteGraph || currentMethod === 'webaudio' || currentVolume > 1) ? 'webaudio' : 'html5';
+            states.push({
+                loaded: el.readyState >= 2 || !!record.source || !!siteGraph,
+                method, boost: !record.reloadRequired && (!!siteGraph || !failure),
+                failure: record.reloadRequired ? record.failure : (!nativeVolumeControl && record.pending) ||
+                    (record.source && sharedContext.state !== 'running') ? contextFailure || 'interaction-required' : failure,
+                reload: record.reloadRequired,
+                volume: record.reloadRequired || (record.source && sharedContext.state !== 'running') ? null :
+                    method === 'site' ? null : el.muted ? 0 :
+                        el.volume * 100 * (method === 'webaudio' ? record.gain?.gain.value ?? currentVolume : 1)
             });
         });
-
+        pageContexts.forEach((record, ctx) => {
+            if (!record.edges.size) return;
+            states.push({ loaded: true, method: nativeVolumeControl || currentMethod === 'html5' ? 'site' : 'webaudio',
+                boost: !record.failure, failure: record.failure ||
+                    (ctx.state !== 'running' ? 'site-context-suspended' : null), reload: !!record.failure,
+                volume: nativeVolumeControl || currentMethod === 'html5' || ctx.state !== 'running' ? null : currentVolume * 100 });
+        });
+        nextState.hasHTML5Audio = nextState.html5AudioCount > 0;
+        nextState.hasHTML5Video = nextState.html5VideoCount > 0;
+        nextState.hasWebAudio ||= !!sharedContext;
+        nextState.webAudioContextCount += sharedContext ? 1 : 0;
+        // Players often keep empty video elements for ads or the next item.
+        // Keep their detection counts, but report capability for loaded players.
+        const loaded = states.filter(state => state.loaded);
+        const playback = loaded.length ? loaded : states;
+        nextState.playbackCount = loaded.length;
+        nextState.controllableMediaCount = states.length;
+        const methods = new Set(playback.map(state => state.method));
+        nextState.effectiveMethod = methods.size > 1 ? 'mixed' : playback[0]?.method || 'site';
+        nextState.boostAvailable = playback.length > 0 && playback.every(state => state.boost);
+        nextState.reloadRequired = states.some(state => state.reload);
+        nextState.failureReason = states.find(state => state.reload)?.failure ||
+            playback.find(state => ['interaction-required', 'resume-failed'].includes(state.failure))?.failure ||
+            playback.find(state => state.failure)?.failure ||
+            (!nativeVolumeControl && currentMethod !== 'html5' ? contextFailure : null) ||
+            (!states.length && (nextState.html5AudioCount || nextState.html5VideoCount) ? 'no-audio-track' : null);
+        const volumes = new Set(playback.map(state => state.volume));
+        nextState.effectiveVolume = volumes.size === 1 ? playback[0]?.volume ?? null : null;
+        nextState.mediaCount = nextState.html5AudioCount + nextState.html5VideoCount +
+            [...pageContexts.values()].filter(record => record.edges.size > 0).length;
         return nextState;
     }
 
     function broadcastAudioState() {
-        const next = recomputeAudioState();
-        Object.assign(audioState, next);
-
-        const payload = JSON.stringify({
-            audioState: {
-                ...audioState,
-                detectedCodecs: [...audioState.detectedCodecs],
-                streamType: audioState.streamType ? { ...audioState.streamType } : null
-            }
-        });
-        window.dispatchEvent(new CustomEvent(injectorEvents.state, { detail: payload }));
+        Object.assign(audioState, recomputeAudioState());
+        window.dispatchEvent(new CustomEvent(injectorEvents.state, {
+            detail: JSON.stringify({ audioState })
+        }));
     }
 
     // ==========================================
@@ -554,7 +813,7 @@
             childList: true,
             subtree: true,
             attributes: true,
-            attributeFilter: ['src', 'type']
+            attributeFilter: ['src', 'type', 'crossorigin']
         });
     }
 
@@ -621,6 +880,8 @@
         }
         lastNativeTouchTs = now;
 
+        nativeVolumeControl = true;
+        applyCurrentVolumeStrategy();
         window.dispatchEvent(new CustomEvent(injectorEvents.nativeTouched));
     }
 
@@ -638,106 +899,46 @@
     // ==========================================
 
     function applyCurrentVolumeStrategy() {
-        if (nativeVolumeControl) {
-            setWebAudioVolume(1);
-            return;
-        }
-
-        if (currentMethod === 'webaudio') {
-            setHTML5Volume(currentVolume);
-            setWebAudioVolume(currentVolume);
-        } else if (currentMethod === 'html5') {
-            // Neutralize prior Web Audio boosts when switching to HTML5-only control.
-            setWebAudioVolume(1);
-            setHTML5Volume(currentVolume);
-        } else {
-            setWebAudioVolume(currentVolume);
-            setHTML5Volume(currentVolume);
-        }
+        updatePageGraphs();
+        currentMedia().forEach(applyMedia);
+        scheduleAudioStateUpdate();
     }
 
-    function setNativeControl(enabled) {
-        const nextValue = !!enabled;
-        if (nativeVolumeControl === nextValue) {
-            return;
-        }
-        nativeVolumeControl = nextValue;
-        console.log(`[Waveform] Native site volume control: ${nativeVolumeControl}`);
-        applyCurrentVolumeStrategy();
-    }
-
-    function setVolume(volume, method) {
-        if (typeof volume !== 'number' || !isFinite(volume)) {
-            console.warn('[Waveform] Invalid volume value');
-            return;
-        }
-        volume = Math.max(0, Math.min(100, volume));
-
-        const validMethods = ['webaudio', 'html5', 'both'];
-        if (!validMethods.includes(method)) {
-            method = 'both';
-        }
-
-        currentVolume = volume;
-        currentMethod = method;
-
-        console.log(`[Waveform] Volume: ${(volume * 100).toFixed(0)}%, Method: ${method}, Native: ${nativeVolumeControl}`);
-        applyCurrentVolumeStrategy();
-    }
-
-    // Listen for messages from content script
-
-    window.addEventListener(injectorEvents.command, (event) => {
-        let payload = event.detail;
-        if (typeof payload === 'string') {
-            try {
-                payload = JSON.parse(payload);
-            } catch {
-                return;
-            }
-        }
-        if (!payload || typeof payload !== 'object') return;
-
-        if (payload.type === 'set-volume') {
-            if (Object.prototype.hasOwnProperty.call(payload, 'nativeVolumeControl')) {
-                setNativeControl(!!payload.nativeVolumeControl);
-            }
-            const volume = parseFloat(payload.volume);
-            const method = String(payload.method || 'both');
-            if (!Number.isNaN(volume)) {
-                setVolume(volume, method);
-            }
-            return;
-        }
-
-        if (payload.type === 'set-native-control') {
-            setNativeControl(!!payload.enabled);
-            return;
-        }
-
-        if (payload.type === 'set-persist') {
-            persistVolume = !!payload.persist;
-            console.log(`[Waveform] Persist volume: ${persistVolume}`);
-            // Re-apply immediately if turned on
-            if (persistVolume && !nativeVolumeControl) {
-                setVolume(currentVolume, currentMethod);
-            }
-            return;
-        }
-
-        if (payload.type === 'get-state') {
+    window.addEventListener(injectorEvents.command, event => {
+        let payload;
+        try { payload = JSON.parse(event.detail); } catch { return; }
+        if (payload?.type === 'get-state') {
             broadcastAudioState();
+            return;
         }
+        if (payload?.type !== 'apply-settings' || !Number.isInteger(payload.revision) ||
+            payload.revision <= settingsRevision) return;
+        const settings = payload.settings;
+        if (!settings || !Number.isFinite(settings.volume)) return;
+        settingsRevision = payload.revision;
+        currentVolume = Math.max(0, Math.min(100, settings.volume / 100));
+        currentMethod = ['webaudio', 'html5', 'both'].includes(settings.method) ? settings.method : 'both';
+        nativeVolumeControl = settings.nativeVolumeControl !== false;
+        persistVolume = !!settings.persistVolume;
+        applyCurrentVolumeStrategy();
+        recoverContext();
     });
 
-    // Initialize
-    setupMediaObserver();
-    setupNativeVolumeTouchDetector();
-
-    // Broadcast initial state
-    broadcastAudioState();
-
-    window.dispatchEvent(new CustomEvent(injectorEvents.ready));
-
-    console.log('[Waveform] Audio injector loaded and ready');
+    function initialize() {
+        setupMediaObserver();
+        setupNativeVolumeTouchDetector();
+        window.addEventListener('pageshow', () => {
+            recoverContext();
+            scheduleHTML5VolumeApply();
+        });
+        for (const event of ['pointerdown', 'keydown', 'touchend']) {
+            document.addEventListener(event, event => {
+                if (event.isTrusted) recoverContext(true);
+            }, { capture: true, passive: true });
+        }
+        broadcastAudioState();
+        window.dispatchEvent(new CustomEvent(injectorEvents.ready));
+    }
+    if (document.documentElement) initialize();
+    else document.addEventListener('DOMContentLoaded', initialize, { once: true });
 })();

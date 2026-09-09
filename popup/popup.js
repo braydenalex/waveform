@@ -25,6 +25,12 @@ const methodHint = document.getElementById('methodHint');
 const detectionBadges = document.getElementById('detectionBadges');
 const nativeVolumeControlToggle = document.getElementById('nativeVolumeControl');
 const nativeControlHint = document.getElementById('nativeControlHint');
+const playbackStatus = document.getElementById('playbackStatus');
+const volumeCaption = document.getElementById('volumeCaption');
+const restoreAudioBtn = document.getElementById('restoreAudioBtn');
+const reloadPageBtn = document.getElementById('reloadPageBtn');
+let requestQueue = Promise.resolve();
+let pendingChanges = 0;
 
 // Settings elements
 const settingsToggle = document.getElementById('settingsToggle');
@@ -84,8 +90,7 @@ async function init() {
         updateMaxVolumeUI();
         updateNativeControlUI(currentSettings.nativeVolumeControl);
 
-        setVolume(currentSettings.volume, currentSettings.method);
-
+        updateAudioDetectionUI(response.audioState);
         fetchAudioState();
 
     } catch (err) {
@@ -97,10 +102,8 @@ async function init() {
 // Fetch audio state from content script
 async function fetchAudioState() {
     try {
-        const status = await browser.tabs.sendMessage(currentTabId, { type: 'getStatus' });
-        if (status && status.audioState) {
-            updateAudioDetectionUI(status.audioState);
-        }
+        const status = await browser.runtime.sendMessage({ type: 'getTabStatus', tabId: currentTabId, domain: currentDomain });
+        if (status?.audioState) updateAudioDetectionUI(status.audioState);
     } catch (err) {
         console.log('Could not fetch audio state:', err);
         updateAudioDetectionUI(null);
@@ -127,9 +130,10 @@ function validateColor(color) {
 
 function updateAudioDetectionUI(state) {
     audioState = state;
+    updatePlaybackStatus(state);
 
     if (!state) {
-        detectionBadges.innerHTML = '<span class="badge badge-none">No audio detected</span>';
+        detectionBadges.innerHTML = '<span class="badge badge-none">No media detected</span>';
         return;
     }
 
@@ -178,22 +182,59 @@ function updateAudioDetectionUI(state) {
     }
 
     if (badges.length === 0) {
-        detectionBadges.innerHTML = '<span class="badge badge-none">No audio detected</span>';
+        detectionBadges.innerHTML = '<span class="badge badge-none">No media detected</span>';
     } else {
         detectionBadges.innerHTML = badges.join('');
     }
 }
 
-// Listen for audio state updates from content script
-browser.runtime.onMessage.addListener((message) => {
-    if (message.type === 'audioStateUpdate') {
-        updateAudioDetectionUI(message.audioState);
+function updatePlaybackStatus(state) {
+    reloadPageBtn.hidden = !state?.reloadRequired;
+    volumeCaption.textContent = currentSettings.nativeVolumeControl ? 'Site volume controls' : 'Requested volume';
+    if (!state?.ready) {
+        playbackStatus.textContent = state?.failureReason === 'injector-unavailable'
+            ? 'Waveform could not connect to this player. Site playback is unchanged.'
+            : 'Connecting to the player…';
         return;
     }
-
-    if (message.type === 'nativeVolumeControlChanged' && message.tabId === currentTabId) {
-        updateNativeControlUI(message.nativeVolumeControl);
+    if (state.reloadRequired) {
+        playbackStatus.textContent = 'Reload needed. Restore site audio, then reload this page to clear the audio route.';
+    } else if (['interaction-required', 'resume-failed', 'site-context-suspended'].includes(state.failureReason)) {
+        playbackStatus.textContent = 'Click play to resume. Audio processing is waiting for the player.';
+    } else if (!state.mediaCount) {
+        playbackStatus.textContent = 'No media detected.';
+    } else if (currentSettings.nativeVolumeControl) {
+        playbackStatus.textContent = 'Site volume controls are active.';
+    } else if (state.failureReason === 'no-audio-track') {
+        playbackStatus.textContent = 'No audio track detected. The detected video has no audio.';
+    } else if (!state.boostAvailable && currentSettings.volume > 100) {
+        if (state.effectiveMethod === 'mixed') {
+            playbackStatus.textContent = 'Some players are limited to 100%. Boost is applied to the supported players.';
+        } else if (state.failureReason === 'protected-media') {
+            playbackStatus.textContent = 'Protected audio: boost is disabled to avoid playback failures in Firefox. Volume is limited to 100%.';
+        } else if (state.failureReason === 'media-not-ready') {
+            playbackStatus.textContent = 'Waiting for the player to load audio before enabling boost.';
+        } else if (state.failureReason === 'cors-unverified') {
+            playbackStatus.textContent = 'Volume limited to 100%. This source has not been verified for cross-origin audio processing.';
+        } else {
+            playbackStatus.textContent = 'Volume limited to 100%. Audio processing is unavailable for this source.';
+        }
+    } else if (state.effectiveVolume !== null && state.effectiveVolume !== undefined) {
+        playbackStatus.textContent = `Applied volume: ${Math.round(state.effectiveVolume)}% (${state.effectiveMethod === 'webaudio' ? 'Web Audio' : 'HTML5'}).`;
+    } else {
+        playbackStatus.textContent = 'Players are using different volume methods.';
     }
+}
+
+browser.runtime.onMessage.addListener(message => {
+    if (message.type !== 'tabStateUpdate' || message.tabId !== currentTabId) return;
+    if (!pendingChanges && message.settings) {
+        currentSettings = { ...currentSettings, ...message.settings };
+        updateMethodUI(currentSettings.method);
+        updateVolumeUI(currentSettings.volume);
+        updateNativeControlUI(currentSettings.nativeVolumeControl);
+    }
+    updateAudioDetectionUI(message.audioState);
 });
 
 // Load global settings
@@ -328,86 +369,62 @@ function updateNativeControlUI(enabled) {
     });
 
     if (isEnabled) {
-        nativeControlHint.textContent = 'Site controls are active for this domain. Waveform is no longer overriding volume here.';
+        nativeControlHint.textContent = 'Site controls are active. This choice is remembered for this website.';
     } else {
         nativeControlHint.textContent = 'Waveform override is active for this domain. Native site controls are normally on by default.';
     }
 }
 
-async function setNativeVolumeControl(enabled, options = {}) {
-    if (!Number.isInteger(currentTabId)) return;
-
-    updateNativeControlUI(enabled);
-
-    try {
-        await browser.tabs.sendMessage(currentTabId, {
-            type: 'setNativeVolumeControl',
-            enabled: currentSettings.nativeVolumeControl
-        });
-    } catch (err) {
-        console.error('Error notifying tab about native volume control state:', err);
-    }
-
-    try {
-        await browser.runtime.sendMessage({
-            type: 'setNativeVolumeControl',
-            tabId: currentTabId,
-            domain: currentDomain,
-            enabled: currentSettings.nativeVolumeControl,
-            persist: options.persist !== false,
-            source: options.source || 'popup'
-        });
-    } catch (err) {
-        console.error('Error saving native volume control state:', err);
-    }
+function sendChange(type, settings) {
+    if (!Number.isInteger(currentTabId)) return Promise.resolve();
+    const request = { type, tabId: currentTabId, domain: currentDomain, settings };
+    pendingChanges++;
+    const operation = requestQueue.then(async () => {
+        const response = await browser.runtime.sendMessage(request);
+        if (!response?.success) throw new Error(response?.error || 'Could not update this tab.');
+        return response;
+    });
+    requestQueue = operation.catch(() => {});
+    return operation.then(response => {
+        if (pendingChanges === 1 && response.settings) {
+            currentSettings = { ...currentSettings, ...response.settings };
+            updateMethodUI(currentSettings.method);
+            updateVolumeUI(currentSettings.volume);
+            updateNativeControlUI(currentSettings.nativeVolumeControl);
+        }
+        if (response.audioState) updateAudioDetectionUI(response.audioState);
+    }).catch(error => {
+        playbackStatus.textContent = error.message;
+    }).finally(() => { pendingChanges--; });
 }
 
-// Send volume update to content script
-async function setVolume(volume, method) {
-    if (!Number.isInteger(currentTabId)) return;
+function setNativeVolumeControl(enabled) {
+    updateNativeControlUI(enabled);
+    return sendChange('updateTabSettings', { nativeVolumeControl: !!enabled });
+}
 
+function setVolume(volume, method) {
     currentSettings.volume = volume;
     currentSettings.method = method || currentSettings.method;
-
-    try {
-        // Send to content script
-        await browser.tabs.sendMessage(currentTabId, {
-            type: 'setVolume',
-            volume: volume,
-            method: currentSettings.method,
-            nativeVolumeControl: currentSettings.nativeVolumeControl
-        });
-
-        // Keep runtime tab settings in sync so reopening popup won't reset active tab volume.
-        await browser.runtime.sendMessage({
-            type: 'setTabVolume',
-            tabId: currentTabId,
-            volume: currentSettings.volume,
-            method: currentSettings.method
-        });
-
-        // Persist per-domain settings only when remember options are enabled.
-        if (globalSettings.rememberMethod || globalSettings.rememberVolume) {
-            const persistedSettings = {
-                method: globalSettings.rememberMethod ? currentSettings.method : 'both',
-                volume: globalSettings.rememberVolume ? currentSettings.volume : 100
-            };
-            await browser.runtime.sendMessage({
-                type: 'saveSettings',
-                domain: currentDomain,
-                settings: persistedSettings
-            });
-        }
-
-        // Also send persistVolume state separately to ensure it updates immediately
-        await browser.tabs.sendMessage(currentTabId, {
-            type: 'setPersist',
-            persist: globalSettings.persistVolume
-        });
-    } catch (err) {
-        console.error('Error setting volume:', err);
-    }
+    volumeCaption.textContent = 'Requested volume';
+    playbackStatus.textContent = 'Applying volume…';
+    return sendChange('updateTabSettings', {
+        volume, method: currentSettings.method,
+        nativeVolumeControl: currentSettings.nativeVolumeControl,
+        persistVolume: globalSettings.persistVolume
+    });
 }
+
+restoreAudioBtn.addEventListener('click', async () => {
+    restoreAudioBtn.disabled = true;
+    await sendChange('restoreSiteAudio');
+    restoreAudioBtn.disabled = false;
+});
+reloadPageBtn.addEventListener('click', async () => {
+    reloadPageBtn.disabled = true;
+    await sendChange('reloadPage');
+    reloadPageBtn.disabled = false;
+});
 
 // Event: Volume slider change
 volumeSlider.addEventListener('input', (e) => {
@@ -492,8 +509,7 @@ accessibilityToggle.addEventListener('change', (e) => {
 persistVolumeToggle.addEventListener('change', (e) => {
     globalSettings.persistVolume = e.target.checked;
     saveGlobalSettings();
-    // Update current tab immediately
-    setVolume(currentSettings.volume, currentSettings.method);
+    // The background broadcasts this preference to every connected frame.
 });
 
 // Event: Reset all sites
