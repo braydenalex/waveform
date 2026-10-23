@@ -58,14 +58,15 @@ h2, h3, p, dl, dd { margin: 0; }
 /* Volume card */
 .volume-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px 12px; }
 .volume-row { display: flex; align-items: center; gap: 4px; }
-.volume-number { display: flex; align-items: baseline; gap: 2px; min-width: 0; }
+/* The number never shrinks; the chip truncates first when space is tight. */
+.volume-number { display: flex; align-items: baseline; gap: 2px; flex: none; }
 #volumeValue { width: 3ch; min-width: 2ch; max-width: 5ch; padding: 0; border: 0; border-radius: 4px; background: transparent; text-align: right; font-size: 2.6rem; font-weight: 700; line-height: 1.1; letter-spacing: -1.5px; font-variant-numeric: tabular-nums; appearance: textfield; -moz-appearance: textfield; }
 #volumeValue::-webkit-inner-spin-button, #volumeValue::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .volume-number > span { font-size: 1.15rem; color: var(--muted); font-weight: 500; }
 .site-control-enabled .volume-number { opacity: .6; }
 .step-button { display: grid; place-items: center; width: 26px; height: 26px; flex: none; padding: 0; border: 1px solid var(--border); border-radius: 50%; font-size: 1.15rem; line-height: 1; background: transparent; }
 .step-button:hover:enabled { border-color: var(--accent); color: var(--accent); }
-.capability { margin-left: auto; color: var(--muted); background: var(--bg); padding: 3px 8px; border-radius: 999px; font-size: .75rem; font-weight: 600; white-space: nowrap; }
+.capability { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); background: var(--bg); padding: 3px 8px; border-radius: 999px; font-size: .75rem; font-weight: 600; white-space: nowrap; }
 .capability[data-tone="success"] { color: var(--accent); background: var(--accent-soft); }
 .capability[data-tone="warning"] { color: var(--warning); background: var(--warning-bg); }
 

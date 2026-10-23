@@ -179,6 +179,7 @@ function updatePlaybackStatus() {
     else if (currentSettings.method === 'html5') capability.textContent = 'Up to 100%';
     else if (state.boostAvailable) { capability.textContent = 'Boost supported'; capability.dataset.tone = 'success'; }
     else { capability.textContent = state.effectiveMethod === 'mixed' ? 'Limited boost' : 'Up to 100%'; capability.dataset.tone = 'warning'; }
+    capability.title = capability.textContent; // The chip may truncate in large-text mode.
 
     if (tabError) return setStatus('Open a website', tabError);
     if (lastChangeError) return setStatus('Couldn’t apply changes', lastChangeError, 'error');
