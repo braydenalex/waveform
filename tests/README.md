@@ -14,7 +14,9 @@ The popup fixtures check site-control switching, all three methods, exact volume
 entry and bounds, presets, mute restoration, queued updates, unrelated tab isolation,
 settings persistence, focus navigation, error recovery, protected/limited/pending/
 empty player states, and every media statistic. Layout checks and screenshots cover
-light, dark, larger text, long codec labels, expanded details, and maximum volume.
+light, dark, the System theme under a dark browser preference, larger text,
+long codec labels, the media details view, and maximum volume. Slider checks cover
+the 100% midpoint, the rounded log scale for boost levels, and one 5% step per arrow key.
 
 A second pass temporarily installs the actual extension and opens a local silent
 WAV fixture. It verifies that 50% and Mute change the media element's volume,

@@ -23,7 +23,7 @@ addEventListener('error', event => fixture.errors.push(event.message));
 addEventListener('unhandledrejection', event => fixture.errors.push(String(event.reason)));
 window.browser = {
     runtime: {
-        getManifest: () => ({ version: '1.3.0' }),
+        getManifest: () => ({ version: '__VERSION__' }), // Filled in from manifest.json by popup-smoke.py.
         onMessage: { addListener: listener => fixture.listeners.push(listener) },
         async sendMessage(request) {
             fixture.messages.push(structuredClone(request));

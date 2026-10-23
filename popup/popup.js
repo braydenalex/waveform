@@ -4,7 +4,7 @@ let currentDomain = null;
 let currentSettings = { volume: 100, method: 'both', nativeVolumeControl: true };
 let globalSettings = {
     maxVolume: 1000, rememberMethod: true, rememberVolume: false,
-    persistVolume: false, theme: 'light', accessibilityMode: false
+    persistVolume: false, theme: 'system', accessibilityMode: false
 };
 let audioState = null;
 let lastAudibleVolume = 100;
@@ -22,6 +22,27 @@ const quickBtns = document.querySelectorAll('.quick-btn');
 const methodNames = { both: 'Auto', html5: 'HTML5', webaudio: 'Web Audio', site: 'Site controls', mixed: 'Mixed methods' };
 const maxVolume = () => currentSettings.method === 'html5' ? 100 : globalSettings.maxVolume;
 const clampVolume = volume => Math.round(Math.max(0, Math.min(maxVolume(), volume)));
+const THEMES = ['system', 'light', 'dark'];
+
+// The slider track is a scale, not the raw percent: 0–100% fills the first
+// half, and boost levels use a log scale above that, so 100–500% stays easy to
+// reach even with a 10000% maximum. Standard mode (max 100%) stays linear.
+const SLIDER_STEPS = 1000;
+function volumeToSlider(volume) {
+    const max = maxVolume();
+    if (max <= 100) return Math.round(volume / max * SLIDER_STEPS);
+    if (volume <= 100) return Math.round(volume / 100 * SLIDER_STEPS / 2);
+    return Math.round(SLIDER_STEPS / 2 * (1 + Math.log(volume / 100) / Math.log(max / 100)));
+}
+function sliderToVolume(position) {
+    const max = maxVolume();
+    const ratio = Math.max(0, Math.min(1, position / SLIDER_STEPS));
+    if (max <= 100) return Math.round(ratio * max);
+    if (ratio <= .5) return Math.round(ratio * 200);
+    const volume = 100 * Math.pow(max / 100, ratio * 2 - 1);
+    const step = volume >= 1000 ? 50 : 5; // Round boost levels to friendly numbers.
+    return clampVolume(Math.round(volume / step) * step);
+}
 
 async function init() {
     $('version').textContent = `v${browser.runtime.getManifest().version}`;
@@ -62,7 +83,7 @@ function render() {
     $('waveformEnabled').checked = !siteControl;
     $('waveformEnabled').disabled = !connected;
     $('mainPanel').classList.toggle('site-control-enabled', siteControl);
-    $('nativeControlHint').textContent = siteControl ? 'Off for this site · use the player’s controls' : 'On for this site · your choice is remembered';
+    $('nativeControlHint').textContent = siteControl ? 'Off · using the site’s controls' : 'On for this site';
     $('volumeCaption').textContent = siteControl ? 'Saved volume setting' : 'Requested volume';
     const disabled = siteControl || !connected;
     [volumeSlider, volumeValue, $('decreaseVolume'), $('increaseVolume'), ...methodBtns].forEach(control => { control.disabled = disabled; });
@@ -79,6 +100,7 @@ function render() {
         webaudio: 'Uses Web Audio when supported. Other players stay at 100% or below.'
     };
     $('methodHint').textContent = hints[currentSettings.method] || hints.both;
+    document.querySelector('.method-buttons').title = $('methodHint').textContent;
     updateVolumeUI();
     quickBtns.forEach(button => {
         const beyondLimit = Number(button.dataset.volume) > maxVolume();
@@ -91,10 +113,12 @@ function render() {
 
 function updateVolumeUI() {
     const volume = currentSettings.volume;
-    volumeSlider.max = maxVolume();
-    volumeSlider.value = volume;
+    const position = volumeToSlider(volume);
+    volumeSlider.max = SLIDER_STEPS;
+    volumeSlider.value = position;
     volumeSlider.setAttribute('aria-valuetext', `${volume}% requested volume`);
-    volumeSlider.style.setProperty('--fill', `${volume / maxVolume() * 100}%`);
+    volumeSlider.style.setProperty('--fill', `${position / SLIDER_STEPS * 100}%`);
+    $('midLabel').hidden = maxVolume() <= 100;
     volumeValue.max = maxVolume();
     // Live player updates must not replace an unfinished number while it is being typed.
     if (document.activeElement !== volumeValue) volumeValue.value = volume;
@@ -142,6 +166,7 @@ function setStatus(title, detail, tone = 'neutral') {
     $('statusTitle').textContent = title;
     $('statusDetail').textContent = detail;
     $('playbackStatus').dataset.tone = tone;
+    $('playbackStatus').title = `${title}. ${detail}`;
 }
 
 function updatePlaybackStatus() {
@@ -233,7 +258,19 @@ function setVolume(volume, method = currentSettings.method) {
 
 function toggleMute() { return setVolume(currentSettings.volume === 0 ? lastAudibleVolume : 0); }
 
-volumeSlider.addEventListener('input', event => setVolume(Number(event.target.value)));
+volumeSlider.addEventListener('input', event => setVolume(sliderToVolume(Number(event.target.value))));
+// Native slider keys would move one scale step, which is not a whole percent.
+// Handle them here so each press is a predictable volume change.
+volumeSlider.addEventListener('keydown', event => {
+    const steps = { ArrowUp: 5, ArrowRight: 5, ArrowDown: -5, ArrowLeft: -5, PageUp: 25, PageDown: -25 };
+    if (event.key === 'Home' || event.key === 'End') {
+        event.preventDefault();
+        setVolume(event.key === 'Home' ? 0 : maxVolume());
+    } else if (event.key in steps) {
+        event.preventDefault();
+        setVolume(currentSettings.volume + steps[event.key]);
+    }
+});
 volumeValue.addEventListener('input', sizeVolumeInput);
 volumeValue.addEventListener('change', () => {
     const value = volumeValue.valueAsNumber;
@@ -256,17 +293,30 @@ $('waveformEnabled').addEventListener('change', event => {
 $('restoreAudioBtn').addEventListener('click', () => sendChange('restoreSiteAudio'));
 $('reloadPageBtn').addEventListener('click', () => sendChange('reloadPage'));
 
-function showSettings(open) {
-    $('mainPanel').hidden = open;
-    $('settingsPanel').hidden = !open;
-    $('settingsToggle').setAttribute('aria-expanded', String(open));
-    $('settingsToggle').setAttribute('aria-label', open ? 'Close settings' : 'Open settings');
-    $('settingsToggle').title = open ? 'Close settings' : 'Settings';
+// Three views share the popup: controls, media details, and settings.
+const views = {
+    main: { panel: 'mainPanel' },
+    details: { panel: 'detailsPanel', toggle: 'detailsToggle', back: 'detailsBackBtn', open: 'Hide media details', closed: 'Show media details' },
+    settings: { panel: 'settingsPanel', toggle: 'settingsToggle', back: 'backBtn', open: 'Close settings', closed: 'Open settings' }
+};
+let currentView = 'main';
+function showView(view) {
+    const previous = currentView;
+    currentView = view;
+    for (const [name, config] of Object.entries(views)) {
+        $(config.panel).hidden = name !== view;
+        if (!config.toggle) continue;
+        $(config.toggle).setAttribute('aria-expanded', String(name === view));
+        $(config.toggle).setAttribute('aria-label', name === view ? config.open : config.closed);
+    }
     window.scrollTo(0, 0);
-    (open ? $('backBtn') : $('settingsToggle')).focus();
+    // Focus the way back in a subview, or the button that opened the last one.
+    (view === 'main' ? $(views[previous].toggle || 'settingsToggle') : $(views[view].back)).focus();
 }
-$('settingsToggle').addEventListener('click', () => showSettings($('settingsPanel').hidden));
-$('backBtn').addEventListener('click', () => showSettings(false));
+for (const name of ['details', 'settings']) {
+    $(views[name].toggle).addEventListener('click', () => showView(currentView === name ? 'main' : name));
+    $(views[name].back).addEventListener('click', () => showView('main'));
+}
 
 async function loadGlobalSettings() {
     try {
@@ -275,11 +325,13 @@ async function loadGlobalSettings() {
     } catch (_) { $('settingsFeedback').textContent = 'Couldn’t load saved preferences.'; }
     $('maxVolumeSelect').value = globalSettings.maxVolume;
     for (const key of ['rememberMethod', 'rememberVolume', 'persistVolume', 'accessibilityMode']) $(key).checked = globalSettings[key];
+    if (!THEMES.includes(globalSettings.theme)) globalSettings.theme = 'system';
     $('themeSelect').value = globalSettings.theme;
     applyAppearance();
 }
 
 function applyAppearance() {
+    // "system" leaves color-scheme to the browser; CSS light-dark() does the rest.
     document.documentElement.dataset.theme = globalSettings.theme;
     document.documentElement.dataset.accessibility = String(globalSettings.accessibilityMode);
 }
@@ -324,8 +376,8 @@ $('resetBtn').addEventListener('click', async () => {
 
 document.addEventListener('keydown', event => {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
-    if (!$('settingsPanel').hidden) {
-        if (event.key === 'Escape') { event.preventDefault(); showSettings(false); }
+    if (currentView !== 'main') {
+        if (event.key === 'Escape') { event.preventDefault(); showView('main'); }
         return;
     }
     // Inputs retain native arrow behavior; the slider must never receive two changes.

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="system">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,63 +8,43 @@
 </head>
 <body>
   <div class="container">
+    <h1 class="sr-only">Waveform</h1>
     <header class="header">
       <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 10v4m4-8v12m4-15v18m4-15v12m4-8v4"/></svg></div>
-      <div class="brand-copy"><h1>Waveform</h1><p id="domain" title="Current website">Connecting…</p></div>
+      <div class="brand-copy"><p id="domain" title="Current website">Connecting…</p><p id="nativeControlHint">Use the site’s volume controls</p></div>
+      <button class="icon-button" id="detailsToggle" aria-label="Show media details" aria-controls="detailsPanel" aria-expanded="false" title="Media details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-6m5 6V9m5 11v-9m5 9V5"/></svg></button>
       <button class="icon-button" id="settingsToggle" aria-label="Open settings" aria-controls="settingsPanel" aria-expanded="false" title="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-.5 2-2 1.2-2-.6-2 3.4 1.5 1.4v2.4L2.5 14l2 3.4 2-.6 2 1.2.5 2h4l.5-2 2-1.2 2 .6 2-3.4-1.5-1.2v-2.4l1.5-1.4-2-3.4-2 .6-2-1.2L13 3Z"/><circle cx="11" cy="11.5" r="3"/></svg></button>
+      <span class="switch" title="Enable Waveform on this site"><input type="checkbox" id="waveformEnabled" role="switch" aria-label="Enable Waveform on this site" aria-describedby="nativeControlHint" disabled><span class="switch-track"></span></span>
     </header>
 
     <main id="mainPanel">
       <section class="volume-card" aria-label="Volume controls">
-        <label class="enable-row" for="waveformEnabled">
-          <span><span class="row-title">Enable Waveform</span><span class="row-description" id="nativeControlHint">Use the site’s volume controls</span></span>
-          <span class="switch"><input type="checkbox" id="waveformEnabled" role="switch" aria-describedby="nativeControlHint" disabled><span class="switch-track"></span></span>
-        </label>
-        <div class="volume-heading"><label for="volumeValue" id="volumeCaption">Requested volume</label><span class="capability" id="boostStatus">Checking player</span></div>
-        <div class="volume-display">
+        <div class="volume-row">
           <button class="step-button" id="decreaseVolume" aria-label="Decrease volume by 5%" title="Decrease by 5%" disabled>−</button>
-          <div class="volume-number"><input id="volumeValue" type="number" min="0" max="1000" step="1" value="100" inputmode="numeric" aria-label="Requested volume, percent" disabled><span aria-hidden="true">%</span></div>
+          <div class="volume-number"><label for="volumeValue" id="volumeCaption" class="sr-only">Requested volume</label><input id="volumeValue" type="number" min="0" max="1000" step="1" value="100" inputmode="numeric" disabled><span aria-hidden="true">%</span></div>
           <button class="step-button" id="increaseVolume" aria-label="Increase volume by 5%" title="Increase by 5%" disabled>+</button>
+          <span class="capability" id="boostStatus">Checking player</span>
         </div>
-        <input aria-label="Requested volume" aria-describedby="playbackStatus" type="range" id="volumeSlider" min="0" max="1000" value="100" step="1" disabled>
-        <div class="volume-labels"><span>0%</span><span id="maxLabel">1000%</span></div>
+        <input aria-label="Requested volume" aria-describedby="playbackStatus" type="range" id="volumeSlider" min="0" max="1000" value="500" step="1" disabled>
+        <div class="volume-labels" aria-hidden="true"><span>0%</span><span id="midLabel">100%</span><span id="maxLabel">1000%</span></div>
         <div class="quick-buttons" role="group" aria-label="Volume presets">
-          <button class="quick-btn mute-button" id="muteBtn" data-volume="0" aria-pressed="false" title="Toggle mute (M)" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4Zm5 4 5 6m0-6-5 6"/></svg><span id="muteLabel">Mute</span></button>
-          <button class="quick-btn" data-volume="50" aria-pressed="false" disabled>50%</button>
-          <button class="quick-btn" data-volume="100" aria-pressed="true" disabled>100%</button>
-          <button class="quick-btn" data-volume="200" aria-pressed="false" disabled>200%</button>
+          <button class="quick-btn" id="muteBtn" data-volume="0" aria-pressed="false" title="Mute (M)" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4Zm5 4 5 6m0-6-5 6"/></svg><span id="muteLabel" class="sr-only">Mute</span></button>
+          <button class="quick-btn" data-volume="50" aria-pressed="false" disabled>50</button>
+          <button class="quick-btn" data-volume="100" aria-pressed="true" disabled>100</button>
+          <button class="quick-btn" data-volume="200" aria-pressed="false" disabled>200</button>
+          <button class="quick-btn" data-volume="400" aria-pressed="false" disabled>400</button>
         </div>
+        <div class="playback-status" id="playbackStatus" role="status" aria-live="polite" aria-atomic="true" data-tone="neutral"><span class="status-dot" aria-hidden="true"></span><p><span id="statusTitle">Connecting to the player</span> <span id="statusDetail">Playback information will appear here.</span></p></div>
+        <div class="method-row">
+          <span id="methodLabel">Method</span>
+          <div class="method-buttons" role="group" aria-labelledby="methodLabel" aria-describedby="methodHint">
+            <button class="method-btn" data-method="both" id="btnBoth" aria-pressed="true" disabled>Auto</button>
+            <button class="method-btn" data-method="html5" id="btnHTML5" aria-pressed="false" disabled>Standard</button>
+            <button class="method-btn" data-method="webaudio" id="btnWebAudio" aria-pressed="false" disabled>Boost</button>
+          </div>
+        </div>
+        <p class="sr-only" id="methodHint">Adjusts volume normally. Boosts compatible players above 100%.</p>
       </section>
-
-      <div class="playback-status" id="playbackStatus" role="status" aria-live="polite" aria-atomic="true" data-tone="neutral"><span class="status-dot" aria-hidden="true"></span><div><p id="statusTitle">Connecting to the player</p><p id="statusDetail">Playback information will appear here.</p></div></div>
-
-      <section class="method-section" aria-labelledby="methodLabel">
-        <h2 id="methodLabel">Control method</h2>
-        <div class="method-buttons" role="group" aria-labelledby="methodLabel" aria-describedby="methodHint">
-          <button class="method-btn" data-method="both" id="btnBoth" aria-pressed="true" disabled><span>Auto</span><small>Recommended</small></button>
-          <button class="method-btn" data-method="html5" id="btnHTML5" aria-pressed="false" disabled><span>Standard</span><small>HTML5</small></button>
-          <button class="method-btn" data-method="webaudio" id="btnWebAudio" aria-pressed="false" disabled><span>Boost</span><small>Web Audio</small></button>
-        </div>
-        <p class="section-hint" id="methodHint">Adjusts volume normally. Boosts compatible players above 100%.</p>
-      </section>
-
-      <details class="media-details" id="mediaDetails">
-        <summary><span>Media details</span><span class="media-summary" id="mediaSummary">Scanning…</span><svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></summary>
-        <div class="media-body">
-          <dl class="media-counts"><div><dt>Video elements</dt><dd id="videoCount">—</dd></div><div><dt>Audio elements</dt><dd id="audioCount">—</dd></div><div><dt>Web Audio contexts</dt><dd id="contextCount">—</dd></div></dl>
-          <dl class="media-stats">
-            <div><dt>Playing / detected</dt><dd id="playbackCount">—</dd></div>
-            <div><dt>Controllable sources</dt><dd id="controllableCount">—</dd></div>
-            <div><dt>Stream format</dt><dd id="streamFormat">Not detected</dd></div>
-            <div><dt>Video codec</dt><dd id="videoCodecs">Not detected</dd></div>
-            <div><dt>Audio codec</dt><dd id="audioCodecs">Not detected</dd></div>
-            <div><dt>Active method</dt><dd id="effectiveMethod">—</dd></div>
-            <div><dt>Applied volume</dt><dd id="effectiveVolume">—</dd></div>
-            <div><dt>Boost support</dt><dd id="boostSupport">Checking</dd></div>
-          </dl>
-          <p class="section-hint">Detected elements may include background or silent players.</p>
-        </div>
-      </details>
 
       <footer class="recovery-controls">
         <button id="restoreAudioBtn" class="text-button" title="Restore the site’s audio controls and remember this choice" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></svg>Restore site audio</button>
@@ -73,9 +53,25 @@
       </footer>
     </main>
 
-    <section id="settingsPanel" hidden aria-labelledby="settingsTitle">
-      <div class="settings-heading"><button class="icon-button" id="backBtn" aria-label="Back to volume controls" title="Back to controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 5-7 7 7 7M5 12h15"/></svg></button><div><h2 id="settingsTitle">Settings</h2><p>Make Waveform work your way.</p></div></div>
-      <h3 class="group-label">Volume &amp; playback</h3>
+    <section id="detailsPanel" class="subview" hidden aria-labelledby="detailsTitle">
+      <div class="subview-heading"><button class="icon-button" id="detailsBackBtn" aria-label="Back to volume controls" title="Back to controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 5-7 7 7 7M5 12h15"/></svg></button><div><h2 id="detailsTitle">Media details</h2><p id="mediaSummary">Scanning…</p></div></div>
+      <dl class="media-counts"><div><dt>Video elements</dt><dd id="videoCount">—</dd></div><div><dt>Audio elements</dt><dd id="audioCount">—</dd></div><div><dt>Web Audio contexts</dt><dd id="contextCount">—</dd></div></dl>
+      <dl class="media-stats">
+        <div><dt>Playing / detected</dt><dd id="playbackCount">—</dd></div>
+        <div><dt>Controllable sources</dt><dd id="controllableCount">—</dd></div>
+        <div><dt>Stream format</dt><dd id="streamFormat">Not detected</dd></div>
+        <div><dt>Video codec</dt><dd id="videoCodecs">Not detected</dd></div>
+        <div><dt>Audio codec</dt><dd id="audioCodecs">Not detected</dd></div>
+        <div><dt>Active method</dt><dd id="effectiveMethod">—</dd></div>
+        <div><dt>Applied volume</dt><dd id="effectiveVolume">—</dd></div>
+        <div><dt>Boost support</dt><dd id="boostSupport">Checking</dd></div>
+      </dl>
+      <p class="section-hint">Detected elements may include background or silent players.</p>
+    </section>
+
+    <section id="settingsPanel" class="subview" hidden aria-labelledby="settingsTitle">
+      <div class="subview-heading"><button class="icon-button" id="backBtn" aria-label="Back to volume controls" title="Back to controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 5-7 7 7 7M5 12h15"/></svg></button><div><h2 id="settingsTitle">Settings</h2><p>Changes save automatically.</p></div></div>
+      <h3 class="group-label">Volume and playback</h3>
       <div class="settings-group">
         <div class="setting-row"><label for="maxVolumeSelect"><span class="row-title">Maximum volume</span><span class="row-description" id="maxVolumeHint">Boost limit. High levels may distort.</span></label><select id="maxVolumeSelect" aria-describedby="maxVolumeHint"><option value="200">200%</option><option value="300">300%</option><option value="500">500%</option><option value="1000">1000%</option><option value="2000">2000%</option><option value="5000">5000%</option><option value="10000">10000%</option></select></div>
         <label class="setting-row" for="rememberMethod"><span><span class="row-title">Remember control method</span><span class="row-description">Save your choice for each website.</span></span><span class="switch"><input type="checkbox" id="rememberMethod" role="switch" checked><span class="switch-track"></span></span></label>
@@ -84,10 +80,10 @@
       </div>
       <h3 class="group-label">Appearance</h3>
       <div class="settings-group">
-        <div class="setting-row"><label for="themeSelect" class="row-title">Theme</label><select id="themeSelect"><option value="light">Light</option><option value="dark">Dark</option></select></div>
+        <div class="setting-row"><label for="themeSelect" class="row-title">Theme</label><select id="themeSelect"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
         <label class="setting-row" for="accessibilityMode"><span><span class="row-title">Larger text</span><span class="row-description">More room. Easier to read.</span></span><span class="switch"><input type="checkbox" id="accessibilityMode" role="switch"><span class="switch-track"></span></span></label>
       </div>
-      <div class="settings-footer"><button class="text-button danger" id="resetBtn">Reset all saved sites</button><p id="settingsFeedback" role="status" aria-live="polite">Changes save automatically.</p></div>
+      <div class="settings-footer"><button class="text-button danger" id="resetBtn">Reset all saved sites</button><p id="settingsFeedback" role="status" aria-live="polite"></p></div>
     </section>
   </div>
   <script src="popup.js"></script>

@@ -20,7 +20,7 @@ I was really tired of seeing shady extensions that also didn't really seem to wo
   players, because the injector runs before any page script
 - **Codec Detection**: Displays video (H.264, H.265, VP9, AV1) and audio (AAC, MP3, Opus) codecs
 - **Stream Type Detection**: Identifies HLS, DASH, MP4, WebM, and other formats
-- **Theme Support**: Light and dark modes
+- **Theme Support**: Follows your system theme, or pick light or dark
 - **Accessibility Mode**: Larger text for better visibility
 
 ## Installation
@@ -39,19 +39,22 @@ Install directly from the Firefox Add-ons store for automatic updates.
 ## Usage
 
 1. Click the Waveform icon in your toolbar
-2. Turn on **Enable Waveform** for the current website
-3. Drag the slider, type an exact percentage, or use the − / + buttons
-4. Use the presets for common levels; **Mute** changes to **Unmute** to restore your previous level
+2. Turn on the switch at the top right to enable Waveform for the current website
+3. Drag the slider, type an exact percentage, or use the − / + buttons. The middle of
+   the slider is 100%; the right half covers boost levels up to your maximum
+4. Use the presets (50, 100, 200, 400) for common levels; the speaker button mutes and
+   restores your previous level
 5. Leave the method on **Auto**, or select **Standard** or **Boost**
-6. Read the applied-volume status below the controls; the large number is your requested level
-7. Expand **Media details** for source counts, stream format, codecs, applied volume, and boost support
+6. Read the one-line status under the presets; the large number is your requested level
+7. Click the bar-chart button for **Media details**: source counts, stream format, codecs,
+   applied volume, and boost support
 
 ### Settings
 - **Max Volume**: Set the upper limit (200% - 10000%)
 - **Remember Control Method**: Save your preferred method per website
 - **Remember Volume**: Save volume per website
 - **Keep volume between videos**: Reapply volume when a player resets it
-- **Theme**: Switch between light/dark mode
+- **Theme**: System (follows Firefox and your OS), Light, or Dark
 - **Larger text**: Enable larger fonts and controls
 
 Open settings with the gear button. Changes save automatically; use the back arrow
