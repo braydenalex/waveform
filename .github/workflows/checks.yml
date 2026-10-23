@@ -1,16 +1,39 @@
 name: Regression checks
 on:
   push:
-    branches: ['**']
+    branches: [main]
+    paths-ignore: ['**.md', 'LICENSE']
   pull_request:
+    paths-ignore: ['**.md', 'LICENSE']
+  # Reused by the release workflow so tests are defined in one place.
+  workflow_call:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or PR replaces the run in progress.
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
       - run: npm run check
       - run: npm test
       - run: npm run package
+      - name: Upload screenshots and Firefox log on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: waveform-ui
+          path: /tmp/waveform-ui
+          retention-days: 7

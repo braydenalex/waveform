@@ -3,33 +3,25 @@
 (function () {
     'use strict';
 
-    function getChannelToken() {
-        const fromCurrentScript = document.currentScript
-            && document.currentScript.dataset
-            && document.currentScript.dataset.waveformChannel;
-        if (fromCurrentScript) return fromCurrentScript;
+    // This runs in the page's world before any page script (a MAIN-world
+    // content script at document_start). Keep private copies of every built-in
+    // the bridge relies on, so page scripts that run later cannot replace them
+    // to read or forge messages.
+    const invoke = Reflect.apply;
+    const construct = Reflect.construct;
+    const toJSON = JSON.stringify;
+    const fromJSON = JSON.parse;
+    const postToPort = MessagePort.prototype.postMessage;
+    const readMessageData = Object.getOwnPropertyDescriptor(MessageEvent.prototype, 'data').get;
 
-        const fallbackScript = document.querySelector('script[data-waveform-channel][src*="audio-injector.js"]');
-        if (fallbackScript && fallbackScript.dataset) {
-            return fallbackScript.dataset.waveformChannel || null;
-        }
-        return null;
+    // The content script takes the other end of this channel once, before page
+    // scripts run. After that, page code has no reference to either port.
+    const channel = new MessageChannel();
+    const bridge = channel.port1;
+    function send(type, payload = {}) {
+        try { invoke(postToPort, bridge, [toJSON({ type, ...payload })]); } catch { /* Bridge closed. */ }
     }
-
-    const channelToken = getChannelToken();
-
-    if (!channelToken) {
-        console.warn('[Waveform] Missing secure channel token; injector disabled');
-        return;
-    }
-
-    const injectorEvents = {
-        command: `waveform:command:${channelToken}`,
-        state: `waveform:state:${channelToken}`,
-        ready: `waveform:ready:${channelToken}`,
-        media: `waveform:media:${channelToken}`,
-        nativeTouched: `waveform:native-volume-touched:${channelToken}`
-    };
+    window.postMessage('waveform:bridge:v1', '*', [channel.port2]);
 
     let currentVolume = 1.0;
     let currentMethod = 'both';
@@ -113,7 +105,7 @@
             gain.channelCount = ctx.destination.channelCount;
             gain.channelCountMode = 'explicit';
             gain.gain.value = pageGraphEnabled() ? currentVolume : 1;
-            OriginalConnect.call(gain, ctx.destination);
+            invoke(OriginalConnect, gain, [ctx.destination]);
             record.gain = gain;
         }
         return record.gain;
@@ -125,15 +117,15 @@
         window.AudioNode.prototype.connect = function (destination, ...args) {
             const ctx = this.context;
             if (destination !== ctx.destination || ctx === sharedContext) {
-                return OriginalConnect.call(this, destination, ...args);
+                return invoke(OriginalConnect, this, [destination, ...args]);
             }
             const record = trackContext(ctx);
             if (!record || this === record.gain) {
-                return OriginalConnect.call(this, destination, ...args);
+                return invoke(OriginalConnect, this, [destination, ...args]);
             }
             const redirected = pageGraphEnabled();
             const physical = redirected ? contextGain(ctx, record) : destination;
-            OriginalConnect.call(this, physical, ...args);
+            invoke(OriginalConnect, this, [physical, ...args]);
             const output = Number(args[0] ?? 0) >>> 0;
             const input = Number(args[1] ?? 0) >>> 0;
             const edges = record.edges.get(this) || [];
@@ -149,7 +141,7 @@
             const ctx = this.context;
             const record = pageContexts.get(ctx);
             const edges = record?.edges.get(this);
-            if (!edges) return OriginalDisconnect.apply(this, args);
+            if (!edges) return invoke(OriginalDisconnect, this, args);
             const destination = args[0];
             const destinationOverload = destination instanceof window.AudioNode;
             const physicalArgs = [...args];
@@ -157,7 +149,7 @@
                 physicalArgs[0] = record.gain;
             }
             // Native validation must succeed before changing our bookkeeping.
-            const result = OriginalDisconnect.apply(this, physicalArgs);
+            const result = invoke(OriginalDisconnect, this, physicalArgs);
             let remaining = edges;
             if (!args.length) remaining = [];
             else if (!destinationOverload && !(window.AudioParam && destination instanceof window.AudioParam)) {
@@ -181,7 +173,7 @@
         if (!Original) continue;
         window[name] = new Proxy(Original, {
             construct(target, args, newTarget) {
-                const ctx = Reflect.construct(target, args, newTarget);
+                const ctx = construct(target, args, newTarget);
                 trackContext(ctx);
                 return ctx;
             }
@@ -189,7 +181,7 @@
     }
     if (OriginalCreateSource) {
         OriginalAudioContext.prototype.createMediaElementSource = function (el) {
-            const source = OriginalCreateSource.call(this, el);
+            const source = invoke(OriginalCreateSource, this, [el]);
             if (this !== sharedContext) siteMediaContexts.set(el, this);
             return source;
         };
@@ -207,12 +199,12 @@
                     const oldTarget = edge.redirected ? record.gain : ctx.destination;
                     const newTarget = redirected ? contextGain(ctx, record) : ctx.destination;
                     try {
-                        OriginalConnect.call(node, newTarget, edge.output, edge.input);
-                        OriginalDisconnect.call(node, oldTarget, edge.output, edge.input);
+                        invoke(OriginalConnect, node, [newTarget, edge.output, edge.input]);
+                        invoke(OriginalDisconnect, node, [oldTarget, edge.output, edge.input]);
                         edge.redirected = redirected;
                     } catch {
                         // Leave the original path intact if rewiring fails.
-                        try { OriginalDisconnect.call(node, newTarget, edge.output, edge.input); } catch {}
+                        try { invoke(OriginalDisconnect, node, [newTarget, edge.output, edge.input]); } catch {}
                         record.failure = 'graph-unavailable';
                     }
                 }
@@ -347,7 +339,7 @@
     const OriginalPlay = window.HTMLMediaElement?.prototype.play;
     if (OriginalPlay) {
         window.HTMLMediaElement.prototype.play = function (...args) {
-            const result = Reflect.apply(OriginalPlay, this, args);
+            const result = invoke(OriginalPlay, this, args);
             observePlayer(this, true);
             return result;
         };
@@ -355,19 +347,13 @@
     if (window.Audio) {
         window.Audio = new Proxy(window.Audio, {
             construct(target, args, newTarget) {
-                return observePlayer(Reflect.construct(target, args, newTarget));
+                return observePlayer(construct(target, args, newTarget));
             },
             apply(target, receiver, args) {
-                return observePlayer(Reflect.apply(target, receiver, args));
+                return observePlayer(invoke(target, receiver, args));
             }
         });
     }
-    window.addEventListener(injectorEvents.media, event => {
-        const element = event.detail?.element;
-        if (window.HTMLMediaElement && element instanceof window.HTMLMediaElement) {
-            observePlayer(element, !element.paused);
-        }
-    });
 
     function hasNoAudioTrack(el) {
         // Firefox exposes whether a loaded video actually contains audio. A
@@ -569,9 +555,9 @@
             record.gain = ctx.createGain();
             record.gain.gain.value = currentVolume;
             // Build the output path first; attachment is the irreversible step.
-            OriginalConnect.call(record.gain, ctx.destination);
-            record.source = OriginalCreateSource.call(ctx, el);
-            OriginalConnect.call(record.source, record.gain);
+            invoke(OriginalConnect, record.gain, [ctx.destination]);
+            record.source = invoke(OriginalCreateSource, ctx, [el]);
+            invoke(OriginalConnect, record.source, [record.gain]);
             record.failure = null;
             writeElementVolume(el, 1);
         } catch {
@@ -579,7 +565,7 @@
             record.failure = 'routing-failed';
             record.reloadRequired = !!record.source;
             if (!record.source && record.gain) {
-                OriginalDisconnect.call(record.gain);
+                invoke(OriginalDisconnect, record.gain, []);
                 record.gain = null;
             }
         } finally {
@@ -731,9 +717,7 @@
 
     function broadcastAudioState() {
         Object.assign(audioState, recomputeAudioState());
-        window.dispatchEvent(new CustomEvent(injectorEvents.state, {
-            detail: JSON.stringify({ audioState })
-        }));
+        send('state', { audioState });
     }
 
     // ==========================================
@@ -809,7 +793,7 @@
             }
         });
 
-        observer.observe(document.documentElement, {
+        observer.observe(document, {
             childList: true,
             subtree: true,
             attributes: true,
@@ -882,7 +866,7 @@
 
         nativeVolumeControl = true;
         applyCurrentVolumeStrategy();
-        window.dispatchEvent(new CustomEvent(injectorEvents.nativeTouched));
+        send('native-volume-touched');
     }
 
     function setupNativeVolumeTouchDetector() {
@@ -904,9 +888,9 @@
         scheduleAudioStateUpdate();
     }
 
-    window.addEventListener(injectorEvents.command, event => {
+    bridge.onmessage = event => {
         let payload;
-        try { payload = JSON.parse(event.detail); } catch { return; }
+        try { payload = fromJSON(invoke(readMessageData, event, [])); } catch { return; }
         if (payload?.type === 'get-state') {
             broadcastAudioState();
             return;
@@ -922,7 +906,7 @@
         persistVolume = !!settings.persistVolume;
         applyCurrentVolumeStrategy();
         recoverContext();
-    });
+    };
 
     function initialize() {
         setupMediaObserver();
@@ -937,8 +921,9 @@
             }, { capture: true, passive: true });
         }
         broadcastAudioState();
-        window.dispatchEvent(new CustomEvent(injectorEvents.ready));
+        send('ready');
     }
-    if (document.documentElement) initialize();
-    else document.addEventListener('DOMContentLoaded', initialize, { once: true });
+    // At document_start <html> may not exist yet; the observer watches the
+    // document node itself, so media parsed later is still seen.
+    initialize();
 })();

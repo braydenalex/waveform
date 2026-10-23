@@ -4,8 +4,53 @@ const tabStates = new Map();
 const queues = new Map();
 let storageQueue = Promise.resolve();
 
+// Frame state is written by code running in web pages (including third-party
+// iframes), so only known fields with bounded, typed values are kept.
+const FAILURE_REASONS = new Set([
+  'injector-unavailable', 'interaction-required', 'resume-failed', 'site-context-suspended',
+  'no-audio-track', 'protected-media', 'cors-unverified', 'media-not-ready', 'web-audio-unavailable',
+  'stream-unverified', 'source-unverified', 'routing-failed', 'context-closed', 'graph-unavailable'
+]);
+const REPORTED_METHODS = new Set(['site', 'html5', 'webaudio', 'mixed']);
+const BOOLEAN_FIELDS = ['ready', 'hasWebAudio', 'hasHTML5Audio', 'hasHTML5Video', 'boostAvailable', 'reloadRequired'];
+const COUNT_FIELDS = ['webAudioContextCount', 'html5AudioCount', 'html5VideoCount', 'mediaCount', 'playbackCount', 'controllableMediaCount'];
+const MAX_CODECS = 20;
+
+function shortText(value, max = 40) {
+  return typeof value === 'string' && value ? value.slice(0, max) : null;
+}
+function color(value) {
+  return typeof value === 'string' && /^#[0-9a-f]{3,8}$/i.test(value) ? value : null;
+}
+function boundedNumber(value, max) {
+  const number = Number(value);
+  return value !== null && value !== '' && Number.isFinite(number) ? Math.max(0, Math.min(max, number)) : null;
+}
+function sanitizeAudioState(raw) {
+  const input = raw && typeof raw === 'object' ? raw : {};
+  const state = {};
+  for (const key of BOOLEAN_FIELDS) state[key] = input[key] === true;
+  for (const key of COUNT_FIELDS) state[key] = Math.round(boundedNumber(input[key], 10000) ?? 0);
+  state.effectiveMethod = REPORTED_METHODS.has(input.effectiveMethod) ? input.effectiveMethod : 'site';
+  state.effectiveVolume = boundedNumber(input.effectiveVolume, 100000);
+  state.requestedVolume = boundedNumber(input.requestedVolume, 100000);
+  state.failureReason = FAILURE_REASONS.has(input.failureReason) ? input.failureReason : null;
+  const stream = input.streamType && typeof input.streamType === 'object' ? input.streamType : null;
+  state.streamType = stream && shortText(stream.type) ? { type: shortText(stream.type), color: color(stream.color) } : null;
+  state.detectedCodecs = (Array.isArray(input.detectedCodecs) ? input.detectedCodecs.slice(0, MAX_CODECS) : [])
+    .filter(codec => codec && typeof codec === 'object' && ['audio', 'video'].includes(codec.type) && shortText(codec.codec))
+    .map(codec => ({ type: codec.type, codec: shortText(codec.codec), color: color(codec.color) }));
+  return state;
+}
+
 function getDomain(url) {
   try { return new URL(url).hostname; } catch { return null; }
+}
+function getOrigin(url) {
+  try {
+    const origin = new URL(url).origin;
+    return origin === 'null' ? null : origin;
+  } catch { return null; }
 }
 function normalizeSettings(value = {}) {
   return {
@@ -95,11 +140,11 @@ function aggregateState(tab) {
 function notify(tabId, tab) {
   browser.runtime.sendMessage({ type: 'tabStateUpdate', tabId, settings: tab.settings, audioState: aggregateState(tab) }).catch(() => {});
 }
-async function handBack(tabId, tab) {
+async function handBack(tabId, tab, persist = true) {
   tab.settings = { ...tab.settings, nativeVolumeControl: true };
   sendSettings(tab); // Stop enforcement even if storage is unavailable.
   notify(tabId, tab);
-  await storeSite(tab.domain, { nativeVolumeControl: true });
+  if (persist) await storeSite(tab.domain, { nativeVolumeControl: true });
 }
 
 browser.runtime.onConnect.addListener(port => {
@@ -120,21 +165,28 @@ browser.runtime.onConnect.addListener(port => {
   void queueTab(tabId, async () => {
     if (disconnected) return;
     const current = await browser.tabs.get(tabId);
-    const tab = await ensureTab(tabId, current.url || port.sender.tab.url);
+    const tabUrl = current.url || port.sender.tab.url;
+    const tab = await ensureTab(tabId, tabUrl);
     if (disconnected) return;
-    tab.frames.set(frameId, { port, state: { ready: false, mediaCount: 0 } });
+    // Only the top document, or a frame from the same origin, may change the
+    // saved preference for the site shown in the address bar.
+    const frameOrigin = getOrigin(port.sender.url);
+    const sameSite = frameId === 0 || (!!frameOrigin && frameOrigin === getOrigin(tabUrl));
+    tab.frames.set(frameId, { port, sameSite, state: sanitizeAudioState({}) });
     port.postMessage({ type: 'settings', settings: tab.settings });
     port.postMessage({ type: 'get-state' });
   }).catch(() => {});
   port.onMessage.addListener(message => {
     void queueTab(tabId, async () => {
       const tab = tabStates.get(tabId);
-      if (disconnected || tab?.frames.get(frameId)?.port !== port) return;
+      const frame = tab?.frames.get(frameId);
+      if (disconnected || frame?.port !== port || !message || typeof message !== 'object') return;
       if (message.type === 'frameState' && message.audioState && typeof message.audioState === 'object') {
-        tab.frames.get(frameId).state = message.audioState;
+        frame.state = sanitizeAudioState(message.audioState);
         notify(tabId, tab);
       } else if (message.type === 'nativeVolumeTouched') {
-        await handBack(tabId, tab);
+        // Third-party frames still hand control back for this tab, but are not saved.
+        await handBack(tabId, tab, frame.sameSite);
       }
     }).catch(() => {});
   });
