@@ -4,6 +4,19 @@ A Firefox extension for per-tab audio volume control with advanced media detecti
 
 I was really tired of seeing shady extensions that also didn't really seem to work fully. So I decided to make my own that is open source and works well. Feel free to fork and make your own version!
 
+## What's new
+
+Changes since 1.5.2:
+
+- **Smoother volume slider.** Dragging the slider no longer makes the popup flicker.
+  Waveform now sends only your latest volume instead of every step along the way,
+  and "Applying your settings" appears only when a player is slow to respond.
+- **"Restore site audio" stays available** while volume changes are being applied.
+- **Cleaner popup.** Presets are filled buttons, and the selected level is easier to
+  spot. The − and + buttons use matching icons. Media details shows every count in
+  one list.
+- **Better dark-mode contrast.** Text on the selected preset now meets accessibility
+  contrast guidelines, and text selection, scrollbars, and checkboxes match the theme.
 
 ## Features
 

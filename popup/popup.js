@@ -12,6 +12,13 @@ let requestQueue = Promise.resolve();
 let settingsQueue = Promise.resolve();
 let pendingChanges = 0;
 let lastChangeError = '';
+// A volume change that is queued but not yet sent. Further slider movement
+// updates it in place, so dragging sends the latest value, not every step.
+let unsentVolumeChange = null;
+// "Applying" only appears if the player is slow to answer; brief waits keep
+// the current status so the popup doesn't flicker while the slider moves.
+let slowChangeTimer = null;
+let showSlowChange = false;
 let tabError = '';
 
 const $ = id => document.getElementById(id);
@@ -89,8 +96,9 @@ function render() {
     [volumeSlider, volumeValue, $('decreaseVolume'), $('increaseVolume'), ...methodBtns].forEach(control => { control.disabled = disabled; });
     $('decreaseVolume').disabled = disabled || currentSettings.volume <= 0;
     $('increaseVolume').disabled = disabled || currentSettings.volume >= maxVolume();
-    $('restoreAudioBtn').disabled = !connected || pendingChanges > 0;
-    $('reloadPageBtn').disabled = !connected || pendingChanges > 0;
+    // Changes run one at a time, so these stay usable while volume requests are pending.
+    $('restoreAudioBtn').disabled = !connected;
+    $('reloadPageBtn').disabled = !connected;
     $('reloadPageBtn').hidden = !audioState?.reloadRequired;
     $('version').hidden = !!audioState?.reloadRequired;
     methodBtns.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.method === currentSettings.method)));
@@ -183,7 +191,7 @@ function updatePlaybackStatus() {
 
     if (tabError) return setStatus('Open a website', tabError);
     if (lastChangeError) return setStatus('Couldn’t apply changes', lastChangeError, 'error');
-    if (pendingChanges) return setStatus('Applying your settings', 'Waiting for the player to report its volume.');
+    if (pendingChanges && showSlowChange) return setStatus('Applying your settings', 'Waiting for the player to report its volume.');
     if (state?.reloadRequired) return setStatus('Reload needed', currentSettings.nativeVolumeControl
         ? 'Site controls are saved. Reload to recover this player.'
         : 'Restore site audio, then reload to recover this player.', 'warning');
@@ -219,13 +227,15 @@ browser.runtime.onMessage.addListener(message => {
     render();
 });
 
-function sendChange(type, settings) {
+function sendChange(type, settings, onSend) {
     if (!Number.isInteger(currentTabId)) return Promise.resolve(false);
     const request = { type, tabId: currentTabId, domain: currentDomain, settings };
     pendingChanges++;
     lastChangeError = '';
+    slowChangeTimer ??= setTimeout(() => { showSlowChange = true; render(); }, 600);
     render();
     const operation = requestQueue.then(async () => {
+        onSend?.();
         const response = await browser.runtime.sendMessage(request);
         if (!response?.success) throw new Error(response?.error || 'Could not update this tab. Try again.');
         return response;
@@ -242,7 +252,15 @@ function sendChange(type, settings) {
     }).catch(error => {
         if (pendingChanges === 1) lastChangeError = error.message;
         return false;
-    }).finally(() => { pendingChanges--; render(); });
+    }).finally(() => {
+        pendingChanges--;
+        if (!pendingChanges) {
+            clearTimeout(slowChangeTimer);
+            slowChangeTimer = null;
+            showSlowChange = false;
+        }
+        render();
+    });
 }
 
 function setVolume(volume, method = currentSettings.method) {
@@ -250,11 +268,23 @@ function setVolume(volume, method = currentSettings.method) {
     if (currentSettings.volume > 0) lastAudibleVolume = currentSettings.volume;
     currentSettings.method = method;
     currentSettings.volume = clampVolume(volume);
-    return sendChange('updateTabSettings', {
+    const settings = {
         volume: currentSettings.volume, method,
         nativeVolumeControl: currentSettings.nativeVolumeControl,
         persistVolume: globalSettings.persistVolume
+    };
+    if (unsentVolumeChange) {
+        Object.assign(unsentVolumeChange.settings, settings);
+        render();
+        return unsentVolumeChange.promise;
+    }
+    if (!Number.isInteger(currentTabId)) return Promise.resolve(false);
+    const change = { settings };
+    unsentVolumeChange = change;
+    change.promise = sendChange('updateTabSettings', settings, () => {
+        if (unsentVolumeChange === change) unsentVolumeChange = null;
     });
+    return change.promise;
 }
 
 function toggleMute() { return setVolume(currentSettings.volume === 0 ? lastAudibleVolume : 0); }

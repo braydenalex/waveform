@@ -20,9 +20,9 @@
     <main id="mainPanel">
       <section class="volume-card" aria-label="Volume controls">
         <div class="volume-row">
-          <button class="step-button" id="decreaseVolume" aria-label="Decrease volume by 5%" title="Decrease by 5%" disabled>−</button>
+          <button class="step-button" id="decreaseVolume" aria-label="Decrease volume by 5%" title="Decrease by 5%" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg></button>
           <div class="volume-number"><label for="volumeValue" id="volumeCaption" class="sr-only">Requested volume</label><input id="volumeValue" type="number" min="0" max="1000" step="1" value="100" inputmode="numeric" disabled><span aria-hidden="true">%</span></div>
-          <button class="step-button" id="increaseVolume" aria-label="Increase volume by 5%" title="Increase by 5%" disabled>+</button>
+          <button class="step-button" id="increaseVolume" aria-label="Increase volume by 5%" title="Increase by 5%" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12"/></svg></button>
           <span class="capability" id="boostStatus">Checking player</span>
         </div>
         <input aria-label="Requested volume" aria-describedby="playbackStatus" type="range" id="volumeSlider" min="0" max="1000" value="500" step="1" disabled>
@@ -55,8 +55,10 @@
 
     <section id="detailsPanel" class="subview" hidden aria-labelledby="detailsTitle">
       <div class="subview-heading"><button class="icon-button" id="detailsBackBtn" aria-label="Back to volume controls" title="Back to controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 5-7 7 7 7M5 12h15"/></svg></button><div><h2 id="detailsTitle">Media details</h2><p id="mediaSummary">Scanning…</p></div></div>
-      <dl class="media-counts"><div><dt>Video elements</dt><dd id="videoCount">—</dd></div><div><dt>Audio elements</dt><dd id="audioCount">—</dd></div><div><dt>Web Audio contexts</dt><dd id="contextCount">—</dd></div></dl>
       <dl class="media-stats">
+        <div><dt>Video elements</dt><dd id="videoCount">—</dd></div>
+        <div><dt>Audio elements</dt><dd id="audioCount">—</dd></div>
+        <div><dt>Web Audio contexts</dt><dd id="contextCount">—</dd></div>
         <div><dt>Playing / detected</dt><dd id="playbackCount">—</dd></div>
         <div><dt>Controllable sources</dt><dd id="controllableCount">—</dd></div>
         <div><dt>Stream format</dt><dd id="streamFormat">Not detected</dd></div>
