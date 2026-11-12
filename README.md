@@ -6,7 +6,7 @@ I was really tired of seeing shady extensions that also didn't really seem to wo
 
 ## What's new
 
-Changes since 1.5.2:
+### 1.6.0
 
 - **Smoother volume slider.** Dragging the slider no longer makes the popup flicker.
   Waveform now sends only your latest volume instead of every step along the way,
