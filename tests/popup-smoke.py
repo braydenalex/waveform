@@ -102,7 +102,10 @@ def main():
         html = (ROOT / 'popup/popup.html').read_text().replace('<script src="popup.js">', '<script src="fixture.js"></script><script src="popup.js">')
         (folder / 'popup.html').write_text(html)
         with (SHOTS / 'firefox.log').open('w') as log:
-            process = subprocess.Popen([FIREFOX, '--headless', '--no-remote', '--profile', str(profile), '--marionette', '--remote-allow-system-access'], stdout=log, stderr=log)
+            # Chrome-context access needs the flag on some Firefox versions and the
+            # environment variable on others, so set both.
+            env = {**os.environ, 'MOZ_REMOTE_ALLOW_SYSTEM_ACCESS': '1'}
+            process = subprocess.Popen([FIREFOX, '--headless', '--no-remote', '--profile', str(profile), '--marionette', '--remote-allow-system-access'], stdout=log, stderr=log, env=env)
             client = None
             try:
                 deadline = time.monotonic() + 25
