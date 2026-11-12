@@ -1,5 +1,8 @@
 name: Build and Release
 
+# Pushing a vX.Y.Z tag (npm run release) runs the checks, submits the build to
+# addons.mozilla.org, and opens a draft GitHub release. The "Attach signed XPI"
+# workflow publishes that draft once Mozilla approves the version.
 on:
   push:
     tags:
@@ -15,10 +18,15 @@ jobs:
   release:
     needs: checks
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     # Only this job can write, and only after every check has passed.
     permissions:
       contents: write
+    env:
+      AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+      AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -30,12 +38,34 @@ jobs:
 
       # Also verifies that the tag matches the manifest version.
       - name: Build runtime-only package
-        run: npm run package
+        run: |
+          npm run package
+          unzip -q "dist/waveform-${TAG#v}.zip" -d dist/src
 
-      - name: Create Release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
-        with:
-          files: dist/waveform-*.zip
-          generate_release_notes: true
-          draft: false
-          prerelease: false
+      # Skipped when this version is already on AMO, so the job can be re-run.
+      - name: Submit to addons.mozilla.org
+        run: |
+          if [ "$(node scripts/amo.cjs status "${TAG#v}")" != missing ]; then
+            echo "Version ${TAG#v} is already on AMO; skipping submission."
+            exit 0
+          fi
+          npx --yes web-ext@10.8.0 sign \
+            --source-dir dist/src \
+            --artifacts-dir dist/signed \
+            --channel listed \
+            --approval-timeout 0 \
+            --api-key "$AMO_JWT_ISSUER" \
+            --api-secret "$AMO_JWT_SECRET"
+
+      - name: Create draft release
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "dist/waveform-${TAG#v}.zip" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "dist/waveform-${TAG#v}.zip" \
+              --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+              --title "Waveform ${TAG#v}" --generate-notes
+          fi
+
+      - name: Try to attach the signed XPI right away
+        run: scripts/attach-xpi.sh

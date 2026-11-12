@@ -5,8 +5,9 @@
     "test": "npm run test:background && npm run test:popup",
     "test:background": "node --test tests/background-security.test.cjs",
     "test:popup": "python3 tests/popup-smoke.py",
-    "check": "node --check audio-injector.js && node --check content.js && node --check background.js && node --check popup/popup.js",
-    "package": "node scripts/package.cjs"
+    "check": "node --check audio-injector.js && node --check content.js && node --check background.js && node --check popup/popup.js && node --check scripts/package.cjs && node --check scripts/amo.cjs && node --check scripts/release.cjs",
+    "package": "node scripts/package.cjs",
+    "release": "node scripts/release.cjs"
   },
   "engines": { "node": ">=22" }
 }

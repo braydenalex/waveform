@@ -1,0 +1,57 @@
+name: Attach signed XPI
+
+# Checks every draft release against AMO and publishes each one whose version
+# has been approved. Runs on a timer because AMO reviews can take hours or days;
+# can also be run by hand from the Actions tab.
+on:
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: attach-xpi
+  cancel-in-progress: false
+
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+      AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Find draft releases
+        id: drafts
+        run: |
+          tags="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 20 \
+            --json tagName,isDraft --jq '[.[] | select(.isDraft) | .tagName] | join(" ")')"
+          echo "Draft releases: ${tags:-none}"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+
+      - if: steps.drafts.outputs.tags != ''
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - if: steps.drafts.outputs.tags != ''
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - if: steps.drafts.outputs.tags != ''
+        env:
+          TAGS: ${{ steps.drafts.outputs.tags }}
+        run: |
+          failed=0
+          for tag in $TAGS; do
+            echo "::group::$tag"
+            TAG="$tag" scripts/attach-xpi.sh || failed=1
+            echo "::endgroup::"
+          done
+          exit $failed
