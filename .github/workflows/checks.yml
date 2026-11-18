@@ -28,6 +28,17 @@ jobs:
         with:
           node-version: 22
       - run: npm run check
+      - name: Set up a virtual audio output for Firefox
+        run: |
+          if ! command -v pulseaudio >/dev/null || ! command -v pactl >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends pulseaudio pulseaudio-utils
+          fi
+          if ! pactl info >/dev/null 2>&1; then
+            pulseaudio --start --exit-idle-time=-1
+          fi
+          pactl load-module module-null-sink sink_name=waveform_ci
+          pactl set-default-sink waveform_ci
       - run: npm test
       - run: npm run package
       - name: Upload screenshots and Firefox log on failure

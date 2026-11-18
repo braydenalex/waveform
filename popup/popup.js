@@ -23,11 +23,26 @@ let showSlowChange = false;
 let tabError = '';
 
 const $ = id => document.getElementById(id);
+const t = (key, ...values) => browser.i18n.getMessage(key, values.map(String));
+// Localize the static controls and the template used for dynamic mixer rows.
+document.documentElement.lang = t('locale');
+for (const root of [document, $('mixerTabTemplate').content]) {
+    for (const element of root.querySelectorAll('[data-i18n]')) element.textContent = t(element.dataset.i18n);
+    for (const attribute of ['title', 'aria-label']) {
+        const marker = `data-i18n-${attribute}`;
+        for (const element of root.querySelectorAll(`[${marker}]`)) {
+            element.setAttribute(attribute, t(element.getAttribute(marker)));
+        }
+    }
+}
+for (const option of $('maxVolumeSelect').options) option.textContent = t('percent', option.value);
+$('midLabel').textContent = t('percent', 100);
+document.querySelector('.volume-labels span').textContent = t('percent', 0);
 const volumeSlider = $('volumeSlider');
 const volumeValue = $('volumeValue');
 const methodBtns = document.querySelectorAll('.method-btn');
 const quickBtns = document.querySelectorAll('.quick-btn');
-const methodNames = { both: 'Auto', html5: 'HTML5', webaudio: 'Web Audio', site: 'Site controls', mixed: 'Mixed methods' };
+const methodNames = { both: t('auto'), html5: t('html5'), webaudio: t('webAudio'), site: t('siteControls'), mixed: t('mixedMethods') };
 const maxVolume = () => currentSettings.method === 'html5' ? 100 : (currentSettings.maxVolume ?? globalSettings.maxVolume);
 const clampVolume = volume => Math.round(Math.max(0, Math.min(maxVolume(), volume)));
 const THEMES = ['system', 'light', 'dark'];
@@ -55,7 +70,7 @@ async function init() {
     await loadGlobalSettings();
     try {
         const response = await browser.runtime.sendMessage({ type: 'getTabInfo' });
-        if (response?.error || !Number.isInteger(response?.tabId)) throw new Error('Open a website to use Waveform.');
+        if (response?.error || !Number.isInteger(response?.tabId)) throw new Error(t('openWebsiteToUse'));
         currentTabId = response.tabId;
         currentDomain = response.domain;
         currentTabMuted = response.muted === true;
@@ -68,8 +83,8 @@ async function init() {
         currentSettings.volume = useVolume && Number.isFinite(Number(saved.volume)) ? clampVolume(Number(saved.volume)) : 100;
         currentSettings.nativeVolumeControl = saved.nativeVolumeControl !== false;
         currentSettings.lastAudibleVolume = saved.lastAudibleVolume || currentSettings.volume || 100;
-        $('domain').textContent = currentDomain || 'Current tab';
-        $('domain').title = currentDomain || 'Current tab';
+        $('domain').textContent = currentDomain || t('currentTab');
+        $('domain').title = currentDomain || t('currentTab');
         audioState = response.audioState || null;
         render();
         try {
@@ -80,8 +95,8 @@ async function init() {
             }
         } catch (_) { /* Keep the last reported state if a status refresh fails. */ }
     } catch (error) {
-        tabError = error.message;
-        $('domain').textContent = 'No website selected';
+        tabError = t('openWebsiteToUse');
+        $('domain').textContent = t('noWebsite');
         render();
     }
     scheduleMixerRefresh();
@@ -93,8 +108,8 @@ function render() {
     $('waveformEnabled').checked = !siteControl;
     $('waveformEnabled').disabled = !connected;
     $('mainPanel').classList.toggle('site-control-enabled', siteControl);
-    $('nativeControlHint').textContent = siteControl ? 'Site controls' : 'On in this tab';
-    $('volumeCaption').textContent = siteControl ? 'Saved volume setting' : 'Requested volume';
+    $('nativeControlHint').textContent = siteControl ? t('siteControls') : t('enabledInTab');
+    $('volumeCaption').textContent = siteControl ? t('savedVolume') : t('requestedVolume');
     const disabled = siteControl || !connected;
     [volumeSlider, volumeValue, $('decreaseVolume'), $('increaseVolume'), ...methodBtns].forEach(control => { control.disabled = disabled; });
     $('decreaseVolume').disabled = disabled || currentSettings.volume <= 0;
@@ -107,9 +122,9 @@ function render() {
     $('version').hidden = !!audioState?.reloadRequired;
     methodBtns.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.method === currentSettings.method)));
     const hints = {
-        both: 'Adjusts volume normally. Boosts compatible players above 100%.',
-        html5: 'Standard element volume, up to 100%. No Web Audio routing.',
-        webaudio: 'Uses Web Audio when supported. Other players stay at 100% or below.'
+        both: t('methodAutoHint'),
+        html5: t('methodStandardHint'),
+        webaudio: t('methodBoostHint')
     };
     $('methodHint').textContent = hints[currentSettings.method] || hints.both;
     document.querySelector('.method-buttons').title = $('methodHint').textContent;
@@ -117,7 +132,8 @@ function render() {
     quickBtns.forEach(button => {
         const beyondLimit = Number(button.dataset.volume) > maxVolume();
         button.disabled = disabled || beyondLimit;
-        if (button.id !== 'muteBtn') button.title = beyondLimit ? `Maximum volume is ${maxVolume()}%` : `Set volume to ${button.dataset.volume}%`;
+        if (button.id !== 'muteBtn') button.title = beyondLimit
+            ? t('volumeMaximum', maxVolume()) : t('setVolumeTo', button.dataset.volume);
     });
     updateMediaDetails();
     updatePlaybackStatus();
@@ -128,17 +144,17 @@ function updateVolumeUI() {
     const position = volumeToSlider(volume);
     volumeSlider.max = SLIDER_STEPS;
     volumeSlider.value = position;
-    volumeSlider.setAttribute('aria-valuetext', `${volume}% requested volume`);
+    volumeSlider.setAttribute('aria-valuetext', t('requestedVolumeValue', volume));
     volumeSlider.style.setProperty('--fill', `${position / SLIDER_STEPS * 100}%`);
     $('midLabel').hidden = maxVolume() <= 100;
     volumeValue.max = maxVolume();
     // Live player updates must not replace an unfinished number while it is being typed.
     if (document.activeElement !== volumeValue) volumeValue.value = volume;
     sizeVolumeInput();
-    $('maxLabel').textContent = `${maxVolume()}%`;
+    $('maxLabel').textContent = t('percent', maxVolume());
     quickBtns.forEach(button => button.setAttribute('aria-pressed', String(Number(button.dataset.volume) === volume)));
-    $('muteLabel').textContent = volume === 0 ? 'Unmute' : 'Mute';
-    $('muteBtn').title = volume === 0 ? `Restore ${clampVolume(currentSettings.lastAudibleVolume)}% (M)` : 'Mute (M)';
+    $('muteLabel').textContent = volume === 0 ? t('unmute') : t('mute');
+    $('muteBtn').title = volume === 0 ? t('restoreVolumeShortcut', clampVolume(currentSettings.lastAudibleVolume)) : t('muteShortcut');
 }
 
 function sizeVolumeInput() {
@@ -154,27 +170,27 @@ function updateMediaDetails() {
     const elements = (state?.html5AudioCount || 0) + (state?.html5VideoCount || 0);
     $('playingCount').textContent = state ? `${state.playingCount || 0} / ${elements}` : '—';
     $('controllableCount').textContent = count('controllableMediaCount');
-    $('streamFormat').textContent = state?.streamType?.type || 'Not detected';
+    $('streamFormat').textContent = state?.streamType?.type || t('notDetected');
     for (const type of ['video', 'audio']) {
         const codecs = (state?.detectedCodecs || []).filter(codec => codec.type === type).map(codec => codec.codec);
-        $(type + 'Codecs').textContent = [...new Set(codecs)].join(', ') || 'Not detected';
+        $(type + 'Codecs').textContent = [...new Set(codecs)].join(', ') || t('notDetected');
     }
-    $('effectiveMethod').textContent = state?.ready ? (methodNames[state.effectiveMethod] || 'Not reported') : '—';
+    $('effectiveMethod').textContent = state?.ready ? (methodNames[state.effectiveMethod] || t('notReported')) : '—';
     const boostLimited = state?.boostAvailable === false && currentSettings.volume > 100;
     const playback = state?.ready ? playbackLabel(state) : null;
-    const canReportVolume = playback && playback !== 'Waiting for audio' &&
+    const canReportVolume = playback && playback !== 'waitingAudio' &&
         !state.reloadRequired && !currentSettings.nativeVolumeControl;
-    $('effectiveVolumeLabel').textContent = canReportVolume && playback !== 'Playing' ? 'Volume set' : 'Applied volume';
+    $('effectiveVolumeLabel').textContent = canReportVolume && playback !== 'playing' ? t('volumeSet') : t('appliedVolume');
     $('effectiveVolume').textContent = !canReportVolume ? '—'
-        : boostLimited && state.effectiveMethod === 'mixed' ? 'Varies by player'
-        : boostLimited && (!Number.isFinite(state.effectiveVolume) || state.effectiveVolume > 100) ? '100% maximum'
-        : Number.isFinite(state.effectiveVolume) ? `${Math.round(state.effectiveVolume)}%` : 'Varies by player';
-    $('boostSupport').textContent = !state?.ready || !state.mediaCount ? 'Not determined'
-        : state.reloadRequired ? 'Reload needed' : state.boostAvailable ? 'Available'
-        : state.effectiveMethod === 'mixed' ? 'Some players only' : 'Unavailable';
+        : boostLimited && state.effectiveMethod === 'mixed' ? t('variesByPlayer')
+        : boostLimited && (!Number.isFinite(state.effectiveVolume) || state.effectiveVolume > 100) ? t('standardMaximum')
+        : Number.isFinite(state.effectiveVolume) ? t('percent', Math.round(state.effectiveVolume)) : t('variesByPlayer');
+    $('boostSupport').textContent = !state?.ready || !state.mediaCount ? t('notDetermined')
+        : state.reloadRequired ? t('reloadNeeded') : state.boostAvailable ? t('available')
+        : state.effectiveMethod === 'mixed' ? t('somePlayersOnly') : t('unavailable');
     const sources = state?.mediaCount || 0;
-    $('mediaSummary').textContent = !state?.ready ? 'Waiting for player' : !sources ? 'No media detected'
-        : [state.streamType?.type, `${sources} source${sources === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
+    $('mediaSummary').textContent = !state?.ready ? t('waitingPlayer') : !sources ? t('noMedia')
+        : [state.streamType?.type, sources === 1 ? t('oneSource') : t('sourceCount', sources)].filter(Boolean).join(' · ');
     $('mediaSummary').title = $('mediaSummary').textContent;
 }
 
@@ -186,10 +202,10 @@ function setStatus(title, detail, tone = 'neutral') {
 }
 
 function playbackLabel(state) {
-    if (state.playingCount) return 'Playing';
-    if (state.waitingCount || !state.loadedCount) return 'Waiting for audio';
-    if (state.pausedCount) return 'Paused';
-    return currentTabAudible && state.hasWebAudio ? 'Playing' : 'Audio ready';
+    if (state.playingCount) return 'playing';
+    if (state.waitingCount || !state.loadedCount) return 'waitingAudio';
+    if (state.pausedCount) return 'paused';
+    return currentTabAudible && state.hasWebAudio ? 'playing' : 'audioReady';
 }
 
 function updatePlaybackStatus() {
@@ -198,51 +214,55 @@ function updatePlaybackStatus() {
     const playback = state?.ready ? playbackLabel(state) : null;
     const limited = state?.ready && state.mediaCount > 0 && !state.reloadRequired &&
         !currentSettings.nativeVolumeControl && !state.boostAvailable && currentSettings.volume > 100;
-    const applied = limited && playback !== 'Waiting for audio' && state.effectiveMethod === 'html5' &&
+    const applied = limited && playback !== 'waitingAudio' && state.effectiveMethod === 'html5' &&
         Number.isFinite(state.effectiveVolume) && state.effectiveVolume <= 100 ? Math.round(state.effectiveVolume) : null;
     $('requestedVolumeLabel').hidden = !limited;
     capability.dataset.tone = 'neutral';
-    if (state?.reloadRequired) { capability.textContent = 'Reload needed'; capability.dataset.tone = 'warning'; }
-    else if (!state?.ready || !state.mediaCount) capability.textContent = 'Checking player';
-    else if (currentSettings.nativeVolumeControl) capability.textContent = 'Site controls';
-    else if (currentSettings.method === 'html5') capability.textContent = 'Up to 100%';
-    else if (state.boostAvailable) { capability.textContent = 'Boost supported'; capability.dataset.tone = 'success'; }
-    else if (applied !== null) { capability.textContent = `${applied}% ${playback === 'Playing' ? 'applied' : 'set'}`; capability.dataset.tone = 'warning'; }
-    else { capability.textContent = state.effectiveMethod === 'mixed' ? 'Limited boost' : 'Up to 100%'; capability.dataset.tone = 'warning'; }
+    if (state?.reloadRequired) { capability.textContent = t('reloadNeeded'); capability.dataset.tone = 'warning'; }
+    else if (!state?.ready || !state.mediaCount) capability.textContent = t('checkingPlayer');
+    else if (currentSettings.nativeVolumeControl) capability.textContent = t('siteControls');
+    else if (currentSettings.method === 'html5') capability.textContent = t('upTo100');
+    else if (state.boostAvailable) { capability.textContent = t('boostSupported'); capability.dataset.tone = 'success'; }
+    else if (applied !== null) { capability.textContent = t(playback === 'playing' ? 'appliedPercent' : 'setPercent', applied); capability.dataset.tone = 'warning'; }
+    else { capability.textContent = state.effectiveMethod === 'mixed' ? t('limitedBoost') : t('upTo100'); capability.dataset.tone = 'warning'; }
     capability.title = capability.textContent; // The chip may truncate in large-text mode.
 
-    if (tabError) return setStatus('Open a website', tabError);
-    if (lastChangeError) return setStatus('Couldn’t apply changes', lastChangeError, 'error');
-    if (pendingChanges && showSlowChange) return setStatus('Applying your settings', 'Waiting for the player to report its volume.');
-    if (state?.reloadRequired) return setStatus('Reload needed', currentSettings.nativeVolumeControl
-        ? 'Reload to recover this player with site controls.'
-        : 'Restore site audio, then reload to recover this player.', 'warning');
+    if (tabError) return setStatus(t('openWebsite'), tabError);
+    if (lastChangeError) return setStatus(t('applyError'), lastChangeError, 'error');
+    if (pendingChanges && showSlowChange) return setStatus(t('applyingSettings'), t('waitingVolume'));
+    if (state?.reloadRequired) return setStatus(t('reloadNeeded'), currentSettings.nativeVolumeControl
+        ? t('reloadWithSiteControls')
+        : t('restoreThenReload'), 'warning');
     if (!state?.ready) return state?.failureReason === 'injector-unavailable'
-        ? setStatus('Player unavailable', 'Waveform couldn’t connect. You can still use the site’s controls.', 'warning')
-        : setStatus('Connecting to the player', 'Start playback to let Waveform detect your audio.');
+        ? setStatus(t('playerUnavailable'), t('playerUnavailableHint'), 'warning')
+        : setStatus(t('connectingPlayer'), t('startPlaybackHint'));
     if (['interaction-required', 'resume-failed', 'site-context-suspended'].includes(state.failureReason)) {
-        return setStatus('Click play to resume', 'Audio processing is waiting for interaction with the player.', 'warning');
+        return setStatus(t('clickPlay'), t('interactionHint'), 'warning');
     }
-    if (!state.mediaCount) return setStatus('No media detected', 'Play audio or video on this page to get started.');
-    if (state.failureReason === 'no-audio-track') return setStatus('No audio track detected', 'The detected video does not contain audio.');
-    const label = playback;
-    if (label === 'Waiting for audio') return setStatus(label, 'Start or resume the player to hear your settings.');
-    if (currentTabMuted) return setStatus(label, 'Muted in Firefox.');
-    if (currentSettings.nativeVolumeControl) return setStatus(label, 'Using the site’s controls.');
+    if (!state.mediaCount) return setStatus(t('noMedia'), t('noMediaHint'));
+    if (state.failureReason === 'no-audio-track') return setStatus(t('noAudioTrack'), t('noAudioTrackHint'));
+    const label = t(playback);
+    if (playback === 'waitingAudio') return setStatus(label, t('resumeToHearSettings'));
+    if (currentTabMuted) return setStatus(label, t('mutedInFirefoxDetail'));
+    if (currentSettings.nativeVolumeControl) return setStatus(label, t('usingSiteControls'));
     if (limited) {
         const reasons = {
-            'protected-media': 'This player uses protected audio.',
-            'cors-unverified': 'Waveform couldn’t verify this source for boosting.',
+            'protected-media': t('protectedAudio'),
+            'cors-unverified': t('unverifiedBoost'),
         };
-        if (state.effectiveMethod === 'mixed') return setStatus(label, 'Some players are limited to 100%.', 'warning');
-        const boostStatus = applied === null ? 'Volume limited to 100%.' : 'Boost unavailable.';
+        if (state.effectiveMethod === 'mixed') return setStatus(label, t('someVolumeLimited'), 'warning');
+        const boostStatus = applied === null ? t('volumeLimited') : t('boostUnavailable');
         return setStatus(label, [boostStatus, reasons[state.failureReason]].filter(Boolean).join(' '), 'warning');
     }
     if (Number.isFinite(state.effectiveVolume)) {
-        const volume = `${Math.round(state.effectiveVolume)}% ${label === 'Playing' ? 'applied' : 'set'}`;
-        return setStatus(label, `${volume}${state.effectiveVolume === 0 ? ' · muted' : ''}.`, label === 'Playing' ? 'success' : 'neutral');
+        const playing = playback === 'playing';
+        const volume = Math.round(state.effectiveVolume);
+        const detail = state.effectiveVolume === 0
+            ? t(playing ? 'appliedMutedDetail' : 'setMutedDetail')
+            : t(playing ? 'appliedDetail' : 'setDetail', volume);
+        return setStatus(label, detail, playing ? 'success' : 'neutral');
     }
-    setStatus(label, 'Volume varies by player.');
+    setStatus(label, t('volumeVaries'));
 }
 
 browser.runtime.onMessage.addListener(message => {
@@ -264,7 +284,7 @@ function sendChange(type, settings, onSend) {
     const operation = requestQueue.then(async () => {
         onSend?.();
         const response = await browser.runtime.sendMessage(request);
-        if (!response?.success) throw new Error(response?.error || 'Could not update this tab. Try again.');
+        if (!response?.success) throw new Error(response?.error || t('tabUpdateFailed'));
         return response;
     });
     requestQueue = operation.catch(() => {});
@@ -356,9 +376,9 @@ $('reloadPageBtn').addEventListener('click', () => sendChange('reloadPage'));
 
 const views = {
     main: { panel: 'mainPanel' },
-    details: { panel: 'detailsPanel', toggle: 'detailsToggle', back: 'detailsBackBtn', open: 'Hide media details', closed: 'Show media details' },
-    mixer: { panel: 'mixerPanel', toggle: 'mixerToggle', back: 'mixerBackBtn', open: 'Close tab mixer', closed: 'Open tab mixer' },
-    settings: { panel: 'settingsPanel', toggle: 'settingsToggle', back: 'backBtn', open: 'Close settings', closed: 'Open settings' }
+    details: { panel: 'detailsPanel', toggle: 'detailsToggle', back: 'detailsBackBtn', open: t('hideDetails'), closed: t('showDetails') },
+    mixer: { panel: 'mixerPanel', toggle: 'mixerToggle', back: 'mixerBackBtn', open: t('closeMixer'), closed: t('openMixer') },
+    settings: { panel: 'settingsPanel', toggle: 'settingsToggle', back: 'backBtn', open: t('closeSettings'), closed: t('openSettings') }
 };
 let currentView = 'main';
 function showView(view) {
@@ -375,7 +395,7 @@ function showView(view) {
     (view === 'main' ? $(views[previous].toggle || 'settingsToggle') : $(views[view].back)).focus();
     if (view === 'mixer') {
         mixerError = '';
-        if (!mixerRows.size) $('mixerStatus').textContent = 'Finding tabs with audio…';
+        if (!mixerRows.size) $('mixerStatus').textContent = t('findingAudioTabs');
         scheduleMixerRefresh();
     }
 }
@@ -398,18 +418,18 @@ async function refreshMixer() {
     mixerTimer = null;
     if (currentView !== 'mixer') return;
     if (!Number.isInteger(currentTabId)) {
-        if (tabError) $('mixerStatus').textContent = 'Couldn’t find the current browser window.';
+        if (tabError) $('mixerStatus').textContent = t('currentWindowUnavailable');
         return;
     }
     const generation = ++mixerGeneration;
     try {
         const response = await browser.runtime.sendMessage({ type: 'getMixerTabs', tabId: currentTabId });
         if (currentView !== 'mixer' || mixerGeneration !== generation) return;
-        if (!response?.success) throw new Error('Couldn’t load tabs with audio. Reopen the mixer to try again.');
+        if (!response?.success) throw new Error(t('mixerLoadFailed'));
         renderMixer(response.tabs);
     } catch (_) {
         if (currentView === 'mixer' && mixerGeneration === generation) {
-            $('mixerStatus').textContent = 'Couldn’t load tabs with audio. Reopen the mixer to try again.';
+            $('mixerStatus').textContent = t('mixerLoadFailed');
         }
     }
 }
@@ -427,23 +447,23 @@ function renderMixer(tabs) {
         row.tab = tab;
         if (row.title.textContent !== tab.title) row.title.textContent = tab.title;
         row.title.title = tab.title;
-        row.title.setAttribute('aria-label', `Go to ${tab.title}`);
-        row.mute.textContent = tab.muted ? 'Unmute' : 'Mute';
-        row.mute.setAttribute('aria-label', `${row.mute.textContent} ${tab.title}`);
+        row.title.setAttribute('aria-label', t('goToTab', tab.title));
+        row.mute.textContent = tab.muted ? t('unmute') : t('mute');
+        row.mute.setAttribute('aria-label', t(tab.muted ? 'unmuteTab' : 'muteTab', tab.title));
         row.slider.disabled = tab.maxVolume === null;
         row.slider.parentElement.hidden = row.slider.disabled;
-        row.slider.setAttribute('aria-label', `Requested volume for ${tab.title}`);
+        row.slider.setAttribute('aria-label', t('requestedTabVolume', tab.title));
         if (!row.editing && !row.pending) renderMixerVolume(row, tab.volume);
-        row.status.textContent = tab.maxVolume === null ? 'Volume control unavailable' : tab.muted ? 'Muted in Firefox' : '';
+        row.status.textContent = tab.maxVolume === null ? t('volumeUnavailable') : tab.muted ? t('mutedInFirefox') : '';
     }
-    $('mixerStatus').textContent = mixerError || (mixerRows.size ? '' : 'No audible tabs. Play audio in a tab to see it here.');
+    $('mixerStatus').textContent = mixerError || (mixerRows.size ? '' : t('emptyMixer'));
 }
 
 function renderMixerVolume(row, volume, position = volumeToSlider(volume ?? 100, row.tab.maxVolume ?? 100)) {
     row.volume = volume ?? 100;
     row.slider.value = position;
     row.slider.style.setProperty('--fill', `${position / SLIDER_STEPS * 100}%`);
-    row.level.textContent = volume === null ? 'Site controls' : `${volume}%`;
+    row.level.textContent = volume === null ? t('siteControls') : t('percent', volume);
     row.slider.setAttribute('aria-valuetext', row.level.textContent);
 }
 
@@ -486,7 +506,7 @@ function changeMixerTab(row, type, changes = {}) {
     mixerError = '';
     row.queue = row.queue.then(async () => {
         const response = await browser.runtime.sendMessage(request);
-        if (!response?.success) throw new Error(response?.error || 'Couldn’t update this tab.');
+        if (!response?.success) throw new Error(response?.error || t('tabUpdateFailed'));
     }).catch(error => { mixerError = error.message; }).finally(() => {
         row.pending--;
         scheduleMixerRefresh();
@@ -509,7 +529,7 @@ async function loadGlobalSettings() {
     try {
         const result = await browser.storage.local.get('_globalSettings');
         globalSettings = { ...globalSettings, ...result._globalSettings };
-    } catch (_) { $('settingsFeedback').textContent = 'Couldn’t load saved preferences.'; }
+    } catch (_) { $('settingsFeedback').textContent = t('preferencesLoadFailed'); }
     $('maxVolumeSelect').value = globalSettings.maxVolume;
     for (const key of ['rememberMethod', 'rememberVolume', 'persistVolume', 'accessibilityMode']) $(key).checked = globalSettings[key];
     if (!THEMES.includes(globalSettings.theme)) globalSettings.theme = 'system';
@@ -518,18 +538,18 @@ async function loadGlobalSettings() {
 }
 
 function applyAppearance() {
-    // "system" leaves color-scheme to the browser; CSS light-dark() does the rest.
+    // The stored "system" value follows Firefox’s color preference in CSS.
     document.documentElement.dataset.theme = globalSettings.theme;
     document.documentElement.dataset.accessibility = String(globalSettings.accessibilityMode);
 }
 
 function saveGlobalSettings() {
     const snapshot = { ...globalSettings };
-    $('settingsFeedback').textContent = 'Saving…';
+    $('settingsFeedback').textContent = t('saving');
     const operation = settingsQueue.then(() => browser.storage.local.set({ _globalSettings: snapshot }));
     settingsQueue = operation.catch(() => {});
-    operation.then(() => { $('settingsFeedback').textContent = 'Changes saved.'; })
-        .catch(() => { $('settingsFeedback').textContent = 'Couldn’t save changes. Please try again.'; });
+    operation.then(() => { $('settingsFeedback').textContent = t('settingsSaved'); })
+        .catch(() => { $('settingsFeedback').textContent = t('settingsSaveFailed'); });
 }
 
 $('maxVolumeSelect').addEventListener('change', event => {
@@ -550,18 +570,18 @@ $('themeSelect').addEventListener('change', event => {
 });
 $('forgetSiteBtn').addEventListener('click', async () => {
     const domain = currentDomain;
-    if (!domain || !confirm(`Forget saved settings for ${domain} and restore site audio in this tab?`)) return;
+    if (!domain || !confirm(t('confirmForgetSite', domain))) return;
     const success = await sendChange('forgetSite');
-    $('settingsFeedback').textContent = success ? `Forgot saved settings for ${domain}.` : 'Couldn’t forget this site. Reopen Waveform and try again.';
+    $('settingsFeedback').textContent = success ? t('forgotSite', domain) : t('forgetSiteFailed');
 });
 $('resetBtn').addEventListener('click', async () => {
-    if (!confirm('Reset saved volume, control methods, and site-control preferences for every website? Your appearance and global settings will be kept.')) return;
+    if (!confirm(t('confirmResetSites'))) return;
     $('resetBtn').disabled = true;
     try {
         const all = await browser.storage.local.get(null);
         await browser.storage.local.remove(Object.keys(all).filter(key => key !== '_globalSettings'));
-        $('settingsFeedback').textContent = 'Saved sites reset. Open a new tab to use the defaults.';
-    } catch (_) { $('settingsFeedback').textContent = 'Couldn’t reset saved sites. Please try again.'; }
+        $('settingsFeedback').textContent = t('sitesReset');
+    } catch (_) { $('settingsFeedback').textContent = t('sitesResetFailed'); }
     finally { $('resetBtn').disabled = false; }
 });
 

@@ -33,7 +33,8 @@ I was really tired of seeing shady extensions that also didn't really seem to wo
   players, because the injector runs before any page script
 - **Codec Detection**: Displays video (H.264, H.265, VP9, AV1) and audio (AAC, MP3, Opus) codecs
 - **Stream Type Detection**: Identifies HLS, DASH, MP4, WebM, and other formats
-- **Theme Support**: Follows your system theme, or pick light or dark
+- **Theme Support**: Follows Firefox’s appearance, with Light and Dark overrides
+- **Languages**: The popup follows Firefox’s display language. English and Spanish are available
 - **Accessibility Mode**: Larger text for better visibility
 
 ## Installation
@@ -76,7 +77,7 @@ so you can unmute them. On pages Waveform can’t adjust, Firefox mute is still 
 - **Remember Control Method**: Save your preferred method per website
 - **Remember Volume**: Save volume per website
 - **Keep volume between videos**: Reapply volume when a player resets it
-- **Theme**: System (follows Firefox and your OS), Light, or Dark
+- **Theme**: Follow Firefox, Light, or Dark
 - **Larger text**: Enable larger fonts and controls
 
 Open settings with the gear button. Changes save automatically. Use the back arrow
@@ -141,7 +142,9 @@ temporarily installs the extension and verifies element volume, actual Web Audio
 gain, and recovery against a local media element. It uses a disposable profile
 and writes screenshots to `/tmp/waveform-ui` by default. See the [test coverage](tests/README.md)
 for remaining playback checks. The archive in `dist/` contains only runtime files,
-icons, and the license. Pull requests and tagged releases must pass the regression checks.
+locale catalogs, icons, and the license. Pull requests and tagged releases must pass the regression checks.
+
+See [localization](docs/localization.md) to contribute a popup or Firefox Add-ons listing translation.
 
 ## Keyboard Shortcuts (in popup)
 - `↑`/`→`: Increase volume by 5%

@@ -100,7 +100,9 @@ def main():
         for file in ('popup.css', 'popup.js'):
             shutil.copy(ROOT / 'popup' / file, folder / file)
         version = json.loads((ROOT / 'manifest.json').read_text())['version']
-        (folder / 'fixture.js').write_text((ROOT / 'tests/popup-fixture.js').read_text().replace('__VERSION__', version))
+        messages = {file.parent.name: json.loads(file.read_text()) for file in (ROOT / '_locales').glob('*/messages.json')}
+        fixture = (ROOT / 'tests/popup-fixture.js').read_text().replace('__VERSION__', version)
+        (folder / 'fixture.js').write_text(fixture.replace('__MESSAGES_BY_LOCALE__', json.dumps(messages)))
         html = (ROOT / 'popup/popup.html').read_text().replace('<script src="popup.js">', '<script src="fixture.js"></script><script src="popup.js">')
         (folder / 'popup.html').write_text(html)
         with (SHOTS / 'firefox.log').open('w') as log:
@@ -123,9 +125,11 @@ def main():
                     raise RuntimeError('Firefox did not start')
                 client.call('WebDriver:NewSession', {'capabilities': {'alwaysMatch': {'acceptInsecureCerts': True}}})
                 client.call('WebDriver:SetWindowRect', {'width': 520, 'height': 1100})
-                client.call('WebDriver:Navigate', {'url': (folder / 'popup.html').as_uri()})
+                fixture_url = (folder / 'popup.html').as_uri()
+                client.call('WebDriver:Navigate', {'url': fixture_url})
                 client.wait("document.getElementById('domain').textContent === 'www.example.com'")
                 run_checks(client)
+                check_popup_localization(client, fixture_url)
                 check_installed_extension(client)
             finally:
                 if client:
@@ -136,6 +140,12 @@ def main():
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
+
+
+def prefer_dark(c, dark):
+    c.call('Marionette:SetContext', {'value': 'chrome'})
+    c.script(f"Services.prefs.setIntPref('layout.css.prefers-color-scheme.content-override', {0 if dark else 1});")
+    c.call('Marionette:SetContext', {'value': 'content'})
 
 
 def run_checks(c):
@@ -153,14 +163,8 @@ def run_checks(c):
     def layout(label):
         check("document.querySelector('.container').scrollWidth <= document.body.clientWidth", label + ' has no horizontal overflow')
 
-    def prefer_dark(dark):
-        # Emulates the OS/browser color preference that the System theme follows.
-        c.call('Marionette:SetContext', {'value': 'chrome'})
-        c.script(f"Services.prefs.setIntPref('layout.css.prefers-color-scheme.content-override', {0 if dark else 1});")
-        c.call('Marionette:SetContext', {'value': 'content'})
-
-    # Start from a light preference so screenshots don't depend on the host's theme.
-    prefer_dark(False)
+    # Start from a light preference so screenshots are consistent on all hosts.
+    prefer_dark(c, False)
     c.wait("getComputedStyle(document.body).backgroundColor === 'rgb(245, 247, 251)'")
     check("!document.getElementById('waveformEnabled').checked && document.getElementById('volumeSlider').disabled", 'site control is the default, with volume disabled')
     check("document.getElementById('themeSelect').value === 'system' && document.documentElement.dataset.theme === 'system'", 'System is the default theme')
@@ -175,11 +179,11 @@ def run_checks(c):
     c.shot('light')
     layout('main panel')
     check("document.querySelector('.container').getBoundingClientRect().height <= 340", 'compact controls stay under 340px tall')
-    prefer_dark(True)
+    prefer_dark(c, True)
     c.wait("getComputedStyle(document.body).backgroundColor === 'rgb(17, 25, 35)'")
     check("document.documentElement.dataset.theme === 'system'", 'System theme follows a dark browser preference')
     c.shot('system-dark')
-    prefer_dark(False)
+    prefer_dark(c, False)
     c.wait("getComputedStyle(document.body).backgroundColor === 'rgb(245, 247, 251)'")
     c.click('#muteBtn')
     idle()
@@ -378,6 +382,22 @@ def run_checks(c):
     print(f'{checks} popup checks passed. Screenshots: {SHOTS}', flush=True)
 
 
+def check_popup_localization(c, fixture_url):
+    c.call('WebDriver:Navigate', {'url': fixture_url + '?locale=es'})
+    c.wait("document.getElementById('domain').textContent === 'www.example.com'")
+    assert c.script("return document.documentElement.lang === 'es' && document.getElementById('mixerToggle').getAttribute('aria-label') === 'Abrir el mezclador de pestañas';")
+    c.click('#waveformEnabled')
+    c.click('[data-volume="50"]')
+    c.wait("document.getElementById('statusTitle').textContent === 'En reproducción' && document.getElementById('statusDetail').textContent === '50 % aplicado.'")
+    c.click('#settingsToggle')
+    c.wait("document.querySelector('#themeSelect option:checked').textContent === 'Como Firefox'")
+    assert c.script("return document.getElementById('forgetSiteBtn').textContent === 'Olvidar ajustes de este sitio' && document.querySelector('.container').scrollWidth <= document.body.clientWidth;")
+    c.shot('settings-spanish')
+    c.call('WebDriver:Navigate', {'url': fixture_url + '?locale=fr'})
+    c.wait("document.documentElement.lang === 'en' && document.getElementById('settingsTitle').textContent === 'Settings'")
+    print('PASS: the popup translates static controls, live messages, and accessible labels with an English fallback', flush=True)
+
+
 def wav_source(amplitude=0):
     sample_rate = 8000
     wav_data = io.BytesIO()
@@ -450,6 +470,8 @@ def check_installed_extension(c):
             c.wait("document.getElementById('domain').textContent === '127.0.0.1'")
 
         init_popup()
+        assert c.script("return document.title === 'Waveform' && browser.runtime.getManifest().description === browser.i18n.getMessage('appDescription');")
+        check_installed_theme(c)
         c.wait("document.getElementById('audioCount').textContent === '1'")
         c.script("document.getElementById('waveformEnabled').click();")
         c.wait("!document.getElementById('restoreAudioBtn').disabled")
@@ -473,6 +495,7 @@ def check_installed_extension(c):
         c.wait("document.getElementById('player').volume === .5")
         print('PASS: reopening Waveform restores the pre-mute level', flush=True)
         c.click('#playFixture')
+        c.wait("document.getElementById('player').currentTime > 0")
         c.call('WebDriver:SwitchToWindow', {'handle': popup_handle})
         c.wait("document.getElementById('statusTitle').textContent === 'Playing' && document.getElementById('playingCount').textContent === '1 / 1'")
         c.call('WebDriver:SwitchToWindow', {'handle': target_handle})
@@ -505,6 +528,21 @@ def check_installed_extension(c):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def check_installed_theme(c):
+    light = "getComputedStyle(document.body).backgroundColor === 'rgb(245, 247, 251)'"
+    dark = "getComputedStyle(document.body).backgroundColor === 'rgb(17, 25, 35)'"
+    c.wait(light)
+    prefer_dark(c, True)
+    c.wait(dark)
+    c.script("const theme = document.getElementById('themeSelect'); theme.value = 'light'; theme.dispatchEvent(new Event('change'));")
+    c.wait(light)
+    c.script("const theme = document.getElementById('themeSelect'); theme.value = 'system'; theme.dispatchEvent(new Event('change'));")
+    c.wait(dark)
+    prefer_dark(c, False)
+    c.wait(light)
+    print('PASS: the installed popup follows live Firefox appearance changes and respects an explicit override', flush=True)
 
 
 def check_boost_signal(c, target_handle, popup_handle):

@@ -1,7 +1,6 @@
-/* One token set: light-dark() follows color-scheme, which follows the theme
-   setting ("system" uses the browser/OS preference). Firefox 120+. */
+/* The default follows Firefox’s color preference, including live changes. */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --bg: light-dark(#f5f7fb, #111923);
   --surface: light-dark(#fff, #1b2635);
   --text: light-dark(#192b45, #edf2fa);
@@ -19,6 +18,9 @@
   --danger: light-dark(#ad3544, #ffa3ad);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 13px;
+}
+@media (prefers-color-scheme: dark) {
+  :root { color-scheme: dark; }
 }
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }

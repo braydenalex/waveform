@@ -276,9 +276,11 @@
 
     function processMediaElement(el) {
         if (mediaRecords.has(el)) { trackedMedia.add(el); return mediaRecords.get(el); }
+        const hasPlayed = el.played.length > 0;
         const record = {
             originalVolume: el.volume, lastWrite: null, source: null, gain: null,
-            pending: false, failedKey: null, failure: null, reloadRequired: false, hasPlayed: el.played.length > 0,
+            pending: false, failedKey: null, failure: null, reloadRequired: false,
+            hasPlayed, playing: hasPlayed && !el.paused && !el.ended,
             encrypted: !!el.mediaKeys, loadCors: null, loadKey: null, corsVerified: false
         };
         mediaRecords.set(el, record);
@@ -291,6 +293,7 @@
             record.failedKey = null;
             record.failure = null;
             record.hasPlayed = false;
+            record.playing = false;
         };
         el.addEventListener('loadstart', onLoadStart);
         el.addEventListener('encrypted', () => {
@@ -308,7 +311,12 @@
                     record.corsVerified = false;
                     record.failedKey = null;
                 }
-                if (event === 'playing') record.hasPlayed = true;
+                if (event === 'playing') {
+                    record.hasPlayed = true;
+                    record.playing = true;
+                } else if (['waiting', 'pause', 'ended', 'emptied', 'error'].includes(event)) {
+                    record.playing = false;
+                }
                 if (event === 'play' || event === 'playing') {
                     trackedMedia.add(el);
                     recoverContext();
@@ -675,7 +683,7 @@
             const method = nativeVolumeControl ? 'site' : graph && currentMethod !== 'html5' &&
                 (siteGraph || currentMethod === 'webaudio' || currentVolume > 1) ? 'webaudio' : 'html5';
             const loaded = el.readyState >= 2 && !el.error;
-            const playing = el.readyState >= 3 && !el.paused && !el.ended && !el.seeking && !el.error;
+            const playing = record.playing && loaded && !el.paused && !el.ended && !el.seeking;
             const paused = loaded && record.hasPlayed && el.paused && !el.ended;
             states.push({
                 loaded, playing, paused, waiting: !el.paused && !el.ended && !playing,
