@@ -13,7 +13,8 @@ const FAILURE_REASONS = new Set([
 ]);
 const REPORTED_METHODS = new Set(['site', 'html5', 'webaudio', 'mixed']);
 const BOOLEAN_FIELDS = ['ready', 'hasWebAudio', 'hasHTML5Audio', 'hasHTML5Video', 'boostAvailable', 'reloadRequired'];
-const COUNT_FIELDS = ['webAudioContextCount', 'html5AudioCount', 'html5VideoCount', 'mediaCount', 'playbackCount', 'controllableMediaCount'];
+const COUNT_FIELDS = ['webAudioContextCount', 'html5AudioCount', 'html5VideoCount', 'mediaCount', 'loadedCount',
+  'playingCount', 'pausedCount', 'waitingCount', 'controllableMediaCount'];
 const MAX_CODECS = 20;
 
 function shortText(value, max = 40) {
@@ -52,13 +53,32 @@ function getOrigin(url) {
     return origin === 'null' ? null : origin;
   } catch { return null; }
 }
-function normalizeSettings(value = {}) {
+function normalizeSettings(value = {}, limit = 10000) {
   return {
-    volume: Number.isFinite(Number(value.volume)) ? Math.max(0, Math.min(10000, Math.round(Number(value.volume)))) : 100,
+    volume: Math.round(boundedNumber(value.volume, limit) ?? 100),
     method: VALID_METHODS.has(value.method) ? value.method : 'both',
     nativeVolumeControl: value.nativeVolumeControl !== false,
     persistVolume: !!value.persistVolume
   };
+}
+function applyTabSettings(tab, global, update = {}) {
+  const next = { ...tab.settings, ...update, persistVolume: global.persistVolume };
+  const maximum = Math.round(boundedNumber(global.maxVolume, 10000) ?? 1000);
+  tab.maxVolume = Math.max(200, maximum);
+  const limit = next.method === 'html5' ? 100 : tab.maxVolume;
+  tab.settings = normalizeSettings(next, limit);
+  // A coalesced volume update can go straight to zero without sending the
+  // last audible slider position. The popup supplies it with that update.
+  const previous = update.volume === 0 ? boundedNumber(update.lastAudibleVolume, limit) : null;
+  const restoreVolume = Math.round(previous || tab.lastAudibleVolume || 100);
+  tab.lastAudibleVolume = tab.settings.volume || Math.max(1, Math.min(limit, restoreVolume));
+}
+function popupSettings(tab) {
+  return { ...tab.settings, maxVolume: tab.maxVolume, lastAudibleVolume: tab.lastAudibleVolume };
+}
+function saveTab(tabId, tab) {
+  const { domain, settings, lastAudibleVolume } = tab;
+  return browser.storage.session.set({ [tabId]: { domain, settings, lastAudibleVolume } });
 }
 function queueTab(tabId, operation) {
   const next = (queues.get(tabId) || Promise.resolve()).then(operation);
@@ -67,16 +87,19 @@ function queueTab(tabId, operation) {
   settled.finally(() => { if (queues.get(tabId) === settled) queues.delete(tabId); });
   return next;
 }
+function queueSiteStorage(operation) {
+  const next = storageQueue.then(operation);
+  storageQueue = next.catch(() => {});
+  return next;
+}
 function storeSite(domain, update) {
   if (!domain) return Promise.resolve();
-  const next = storageQueue.then(async () => {
+  return queueSiteStorage(async () => {
     const stored = await browser.storage.local.get(domain);
     const settings = normalizeSettings({ ...stored[domain], ...update });
     delete settings.persistVolume;
     await browser.storage.local.set({ [domain]: settings });
   });
-  storageQueue = next.catch(() => {});
-  return next;
 }
 async function ensureTab(tabId, url) {
   let tab = tabStates.get(tabId);
@@ -84,16 +107,23 @@ async function ensureTab(tabId, url) {
   if (!url && tab) return tab;
   const domain = getDomain(url);
   if (!tab || tab.domain !== domain) {
-    const stored = await browser.storage.local.get([domain || '', '_globalSettings']);
+    const key = String(tabId);
+    const [stored, session] = await Promise.all([
+      browser.storage.local.get([domain || '', '_globalSettings']),
+      browser.storage.session.get(key)
+    ]);
     const global = stored._globalSettings || {};
     const saved = stored[domain] || {};
-    const settings = normalizeSettings({
+    // The event page can go idle while the tab stays open.
+    const live = session[key]?.domain === domain ? session[key] : null;
+    if (url && session[key] && !live) await browser.storage.session.remove(key);
+    tab = { domain, frames: new Map(), lastAudibleVolume: live?.lastAudibleVolume };
+    applyTabSettings(tab, global, {
       volume: global.rememberVolume ? saved.volume : 100,
       method: global.rememberMethod !== false ? saved.method : 'both',
       nativeVolumeControl: saved.nativeVolumeControl,
-      persistVolume: global.persistVolume
+      ...live?.settings
     });
-    tab = { domain, settings, frames: new Map() };
     tabStates.set(tabId, tab);
   }
   return tab;
@@ -110,8 +140,9 @@ function aggregateState(tab) {
   const frames = [...(tab?.frames.values() || [])].map(frame => frame.state).filter(Boolean);
   const media = frames.filter(state => state.mediaCount > 0);
   const controllable = media.filter(state => state.controllableMediaCount !== 0);
-  const loaded = controllable.filter(state => state.playbackCount > 0);
-  const playback = loaded.length ? loaded : controllable;
+  const loaded = controllable.filter(state => state.loadedCount > 0);
+  const playing = loaded.filter(state => state.playingCount > 0);
+  const playback = playing.length ? playing : loaded.length ? loaded : controllable;
   const states = playback.length ? playback : frames;
   const sum = key => frames.reduce((total, state) => total + (Number(state[key]) || 0), 0);
   const methods = new Set(playback.map(state => state.effectiveMethod));
@@ -124,10 +155,12 @@ function aggregateState(tab) {
     hasHTML5Audio: frames.some(state => state.hasHTML5Audio),
     hasHTML5Video: frames.some(state => state.hasHTML5Video),
     webAudioContextCount: sum('webAudioContextCount'), html5AudioCount: sum('html5AudioCount'), html5VideoCount: sum('html5VideoCount'),
-    mediaCount: sum('mediaCount'), playbackCount: sum('playbackCount'), controllableMediaCount: sum('controllableMediaCount'), detectedCodecs: [...codecs.values()],
+    mediaCount: sum('mediaCount'), loadedCount: sum('loadedCount'), playingCount: sum('playingCount'),
+    pausedCount: sum('pausedCount'), waitingCount: sum('waitingCount'), controllableMediaCount: sum('controllableMediaCount'),
+    detectedCodecs: [...codecs.values()],
     streamType: playback.find(state => state.streamType)?.streamType || null,
     effectiveMethod: methods.size > 1 ? 'mixed' : playback[0]?.effectiveMethod || 'site',
-    effectiveVolume: volumes.size === 1 ? playback[0]?.effectiveVolume ?? null : null,
+    effectiveVolume: loaded.length && volumes.size === 1 ? playback[0].effectiveVolume : null,
     requestedVolume: tab?.settings.volume ?? 100,
     boostAvailable: playback.length > 0 && playback.every(state => state.boostAvailable),
     reloadRequired: frames.some(state => state.reloadRequired),
@@ -138,13 +171,42 @@ function aggregateState(tab) {
   };
 }
 function notify(tabId, tab) {
-  browser.runtime.sendMessage({ type: 'tabStateUpdate', tabId, settings: tab.settings, audioState: aggregateState(tab) }).catch(() => {});
+  browser.runtime.sendMessage({ type: 'tabStateUpdate', tabId, settings: popupSettings(tab), audioState: aggregateState(tab) }).catch(() => {});
+}
+function mixerTab(info) {
+  const tab = tabStates.get(info.id);
+  const domain = info.url ? getDomain(info.url) : tab?.domain ?? null;
+  const canAdjust = !!tab && tab.domain === domain && [...tab.frames.values()].some(({ state }) =>
+    state?.ready && state.controllableMediaCount > 0 && !state.reloadRequired &&
+    (tab.settings.method !== 'html5' || state.hasHTML5Audio || state.hasHTML5Video));
+  const settings = canAdjust ? tab.settings : null;
+  return {
+    tabId: info.id, domain,
+    title: shortText(info.title, 200) || domain || browser.i18n.getMessage('fallbackTabTitle', String(info.index + 1)),
+    audible: !!info.audible, muted: !!info.mutedInfo?.muted,
+    volume: settings?.nativeVolumeControl === false ? settings.volume : null,
+    maxVolume: settings ? (settings.method === 'html5' ? 100 : tab.maxVolume) : null
+  };
+}
+
+function commandError(key) {
+  return { success: false, error: browser.i18n.getMessage(key) };
+}
+
+async function getMixerTabs(sourceTabId) {
+  const source = await browser.tabs.get(sourceTabId);
+  const tabs = await browser.tabs.query({});
+  return { success: true, tabs: tabs.filter(info => Number.isInteger(info.id) && !!info.incognito === !!source.incognito)
+    .map(mixerTab).filter(tab => tab.audible || tab.muted || tab.volume === 0) };
 }
 async function handBack(tabId, tab, persist = true) {
   tab.settings = { ...tab.settings, nativeVolumeControl: true };
   sendSettings(tab); // Stop enforcement even if storage is unavailable.
   notify(tabId, tab);
-  if (persist) await storeSite(tab.domain, { nativeVolumeControl: true });
+  await Promise.all([
+    saveTab(tabId, tab),
+    persist && storeSite(tab.domain, { nativeVolumeControl: true })
+  ]);
 }
 
 browser.runtime.onConnect.addListener(port => {
@@ -193,7 +255,10 @@ browser.runtime.onConnect.addListener(port => {
 });
 
 browser.tabs.onRemoved.addListener(tabId => {
-  void queueTab(tabId, () => tabStates.delete(tabId));
+  void queueTab(tabId, () => {
+    tabStates.delete(tabId);
+    return browser.storage.session.remove(String(tabId));
+  }).catch(() => {});
 });
 browser.tabs.onUpdated.addListener((tabId, change) => {
   if (!change.url && change.status !== 'loading') return;
@@ -218,10 +283,13 @@ browser.storage.onChanged.addListener((changes, area) => {
     void queueTab(tabId, () => {
       const tab = tabStates.get(tabId);
       if (!tab) return;
-      tab.settings = { ...tab.settings, persistVolume: !!global.persistVolume };
+      const previousVolume = tab.settings.volume;
+      const previousRestoreVolume = tab.lastAudibleVolume;
+      applyTabSettings(tab, global);
       sendSettings(tab);
       notify(tabId, tab);
-    });
+      if (tab.settings.volume !== previousVolume || tab.lastAudibleVolume !== previousRestoreVolume) return saveTab(tabId, tab);
+    }).catch(() => {});
   }
 });
 
@@ -231,39 +299,74 @@ browser.runtime.onMessage.addListener((message, sender) => {
   if (!message || (sender.tab && !sender.url?.startsWith(browser.runtime.getURL('')))) return false;
   if (message.type === 'getTabInfo') {
     return browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
-      if (!tabs[0]) return { error: 'No active tab' };
+      if (!tabs[0]) return commandError('noActiveTab');
       const active = tabs[0];
       return queueTab(active.id, async () => {
         const tab = await ensureTab(active.id, active.url);
         sendFrames(tab, { type: 'get-state' });
-        return { tabId: active.id, domain: tab.domain, settings: tab.settings, hasRuntimeSettings: true, audioState: aggregateState(tab) };
+        return { tabId: active.id, domain: tab.domain, muted: !!active.mutedInfo?.muted, audible: !!active.audible,
+          settings: popupSettings(tab), hasRuntimeSettings: true, audioState: aggregateState(tab) };
       });
-    }).catch(error => ({ error: error.message }));
+    }).catch(() => commandError('openWebsiteToUse'));
   }
-  if (!['updateTabSettings', 'restoreSiteAudio', 'reloadPage', 'getTabStatus'].includes(message.type) || !Number.isInteger(message.tabId)) return false;
+  if (!Number.isInteger(message.tabId)) return false;
+  if (message.type === 'getMixerTabs') return getMixerTabs(message.tabId).catch(() => commandError('mixerLoadFailed'));
+  const mixerAction = ['setMixerVolume', 'setMixerMuted', 'focusMixerTab'].includes(message.type);
+  if (!mixerAction && !['updateTabSettings', 'restoreSiteAudio', 'reloadPage', 'getTabStatus', 'forgetSite'].includes(message.type)) return false;
   return queueTab(message.tabId, async () => {
     const info = await browser.tabs.get(message.tabId);
+    if (mixerAction) {
+      const source = await browser.tabs.get(message.sourceTabId);
+      const target = mixerTab(info);
+      if (!!source.incognito !== !!info.incognito || message.domain !== target.domain) {
+        return commandError('mixerTabChanged');
+      }
+      if (message.type === 'setMixerMuted') {
+        await browser.tabs.update(info.id, { muted: message.muted === true });
+        return { success: true };
+      }
+      if (message.type === 'focusMixerTab') {
+        await browser.tabs.update(info.id, { active: true });
+        if (info.windowId !== source.windowId) await browser.windows.update(info.windowId, { focused: true });
+        return { success: true };
+      }
+      if (target.maxVolume === null) return commandError('mixerPlayerUnavailable');
+    }
     const tab = await ensureTab(message.tabId, info.url);
-    if (message.domain !== undefined && message.domain !== tab.domain) throw new Error('The tab navigated to another website. Reopen Waveform.');
-    if (message.type === 'updateTabSettings') {
+    if (message.domain !== undefined && message.domain !== tab.domain) return commandError('tabNavigated');
+    if (message.type === 'updateTabSettings' || message.type === 'setMixerVolume' || message.type === 'forgetSite') {
       const previous = tab.settings;
-      tab.settings = normalizeSettings({ ...previous, ...message.settings });
-      sendSettings(tab);
-      notify(message.tabId, tab);
       const stored = await browser.storage.local.get('_globalSettings');
       const global = stored._globalSettings || {};
-      const update = {
-        volume: global.rememberVolume ? tab.settings.volume : 100,
-        method: global.rememberMethod !== false ? tab.settings.method : 'both'
-      };
-      if (previous.nativeVolumeControl !== tab.settings.nativeVolumeControl) update.nativeVolumeControl = tab.settings.nativeVolumeControl;
-      await storeSite(tab.domain, update);
+      let settings = message.settings;
+      if (message.type === 'forgetSite') {
+        if (!tab.domain) return commandError('openWebsiteToForget');
+        await queueSiteStorage(() => browser.storage.local.remove(tab.domain));
+        settings = { volume: 100, method: 'both', nativeVolumeControl: true };
+      } else if (message.type === 'setMixerVolume') {
+        if (!Number.isFinite(message.volume)) return commandError('invalidVolume');
+        settings = { volume: message.volume, nativeVolumeControl: false };
+      }
+      applyTabSettings(tab, global, settings);
+      sendSettings(tab);
+      notify(message.tabId, tab);
+      const saved = saveTab(message.tabId, tab);
+      if (message.type === 'updateTabSettings') {
+        const update = {
+          volume: global.rememberVolume ? tab.settings.volume : 100,
+          method: global.rememberMethod !== false ? tab.settings.method : 'both'
+        };
+        if (previous.nativeVolumeControl !== tab.settings.nativeVolumeControl) update.nativeVolumeControl = tab.settings.nativeVolumeControl;
+        await Promise.all([saved, storeSite(tab.domain, update)]);
+      } else {
+        await saved;
+      }
     } else if (message.type === 'restoreSiteAudio' || message.type === 'reloadPage') {
       await handBack(message.tabId, tab);
       if (message.type === 'reloadPage') await browser.tabs.reload(message.tabId);
     } else {
       sendFrames(tab, { type: 'get-state' });
     }
-    return { success: true, settings: tab.settings, audioState: aggregateState(tab) };
-  }).catch(error => ({ success: false, error: error.message }));
+    return { success: true, settings: popupSettings(tab), audioState: aggregateState(tab) };
+  }).catch(() => commandError('tabUpdateFailed'));
 });

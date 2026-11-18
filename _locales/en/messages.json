@@ -1,0 +1,585 @@
+{
+  "locale": {
+    "message": "en"
+  },
+  "appName": {
+    "message": "Waveform"
+  },
+  "appDescription": {
+    "message": "Adjust audio volume and display other audio and video information."
+  },
+  "currentWebsite": {
+    "message": "Current website"
+  },
+  "connecting": {
+    "message": "Connecting…"
+  },
+  "siteControls": {
+    "message": "Site controls"
+  },
+  "openMixer": {
+    "message": "Open tab mixer"
+  },
+  "closeMixer": {
+    "message": "Close tab mixer"
+  },
+  "mixerTitle": {
+    "message": "Tab mixer"
+  },
+  "showDetails": {
+    "message": "Show media details"
+  },
+  "hideDetails": {
+    "message": "Hide media details"
+  },
+  "detailsTitle": {
+    "message": "Media details"
+  },
+  "openSettings": {
+    "message": "Open settings"
+  },
+  "closeSettings": {
+    "message": "Close settings"
+  },
+  "settingsTitle": {
+    "message": "Settings"
+  },
+  "enableWaveform": {
+    "message": "Enable Waveform on this site"
+  },
+  "volumeControls": {
+    "message": "Volume controls"
+  },
+  "decreaseVolume": {
+    "message": "Decrease volume by 5%"
+  },
+  "increaseVolume": {
+    "message": "Increase volume by 5%"
+  },
+  "requestedVolume": {
+    "message": "Requested volume"
+  },
+  "requested": {
+    "message": "Requested"
+  },
+  "checkingPlayer": {
+    "message": "Checking player"
+  },
+  "volumePresets": {
+    "message": "Volume presets"
+  },
+  "muteShortcut": {
+    "message": "Mute (M)"
+  },
+  "mute": {
+    "message": "Mute"
+  },
+  "unmute": {
+    "message": "Unmute"
+  },
+  "connectingPlayer": {
+    "message": "Connecting to the player"
+  },
+  "playbackInfoPending": {
+    "message": "Playback information will appear here."
+  },
+  "method": {
+    "message": "Method"
+  },
+  "auto": {
+    "message": "Auto"
+  },
+  "standard": {
+    "message": "Standard"
+  },
+  "boost": {
+    "message": "Boost"
+  },
+  "methodAutoHint": {
+    "message": "Adjusts volume normally. Boosts compatible players above 100%."
+  },
+  "methodStandardHint": {
+    "message": "Standard element volume, up to 100%. No Web Audio routing."
+  },
+  "methodBoostHint": {
+    "message": "Uses Web Audio when supported. Other players stay at 100% or below."
+  },
+  "restoreAudioHint": {
+    "message": "Restore the site’s audio controls and remember this choice"
+  },
+  "restoreAudio": {
+    "message": "Restore site audio"
+  },
+  "reloadPage": {
+    "message": "Reload page"
+  },
+  "backToVolume": {
+    "message": "Back to volume controls"
+  },
+  "backToControls": {
+    "message": "Back to controls"
+  },
+  "scanning": {
+    "message": "Scanning…"
+  },
+  "videoElements": {
+    "message": "Video elements"
+  },
+  "audioElements": {
+    "message": "Audio elements"
+  },
+  "webAudioContexts": {
+    "message": "Web Audio contexts"
+  },
+  "playingElements": {
+    "message": "Playing media elements"
+  },
+  "controllableSources": {
+    "message": "Controllable sources"
+  },
+  "streamFormat": {
+    "message": "Stream format"
+  },
+  "notDetected": {
+    "message": "Not detected"
+  },
+  "videoCodec": {
+    "message": "Video codec"
+  },
+  "audioCodec": {
+    "message": "Audio codec"
+  },
+  "activeMethod": {
+    "message": "Active method"
+  },
+  "appliedVolume": {
+    "message": "Applied volume"
+  },
+  "boostSupport": {
+    "message": "Boost support"
+  },
+  "checking": {
+    "message": "Checking"
+  },
+  "detectedMediaHint": {
+    "message": "Detected elements may include background or silent players."
+  },
+  "tabsWithAudio": {
+    "message": "Tabs with audio"
+  },
+  "settingsAutosave": {
+    "message": "Changes save automatically."
+  },
+  "volumeAndPlayback": {
+    "message": "Volume and playback"
+  },
+  "maximumVolume": {
+    "message": "Maximum volume"
+  },
+  "maximumVolumeHint": {
+    "message": "Boost limit. High levels may distort."
+  },
+  "rememberMethod": {
+    "message": "Remember control method"
+  },
+  "rememberMethodHint": {
+    "message": "Save your choice for each website."
+  },
+  "rememberVolume": {
+    "message": "Remember volume"
+  },
+  "rememberVolumeHint": {
+    "message": "Start at your saved level on each site."
+  },
+  "keepVolume": {
+    "message": "Keep volume between videos"
+  },
+  "keepVolumeHint": {
+    "message": "Reapply if a player resets the volume."
+  },
+  "appearance": {
+    "message": "Appearance"
+  },
+  "theme": {
+    "message": "Theme"
+  },
+  "followFirefox": {
+    "message": "Follow Firefox"
+  },
+  "light": {
+    "message": "Light"
+  },
+  "dark": {
+    "message": "Dark"
+  },
+  "largerText": {
+    "message": "Larger text"
+  },
+  "largerTextHint": {
+    "message": "More room. Easier to read."
+  },
+  "savedSites": {
+    "message": "Saved sites"
+  },
+  "forgetSite": {
+    "message": "Forget settings for this site"
+  },
+  "resetAllSites": {
+    "message": "Reset all saved sites"
+  },
+  "currentTab": {
+    "message": "Current tab"
+  },
+  "noWebsite": {
+    "message": "No website selected"
+  },
+  "openWebsite": {
+    "message": "Open a website"
+  },
+  "openWebsiteToUse": {
+    "message": "Open a website to use Waveform."
+  },
+  "enabledInTab": {
+    "message": "On in this tab"
+  },
+  "savedVolume": {
+    "message": "Saved volume setting"
+  },
+  "percent": {
+    "message": "$value$%",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "volumeMaximum": {
+    "message": "Maximum volume is $value$%",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "setVolumeTo": {
+    "message": "Set volume to $value$%",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "requestedVolumeValue": {
+    "message": "$value$% requested volume",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "restoreVolumeShortcut": {
+    "message": "Restore $value$% (M)",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "html5": {
+    "message": "HTML5"
+  },
+  "webAudio": {
+    "message": "Web Audio"
+  },
+  "mixedMethods": {
+    "message": "Mixed methods"
+  },
+  "notReported": {
+    "message": "Not reported"
+  },
+  "volumeSet": {
+    "message": "Volume set"
+  },
+  "variesByPlayer": {
+    "message": "Varies by player"
+  },
+  "standardMaximum": {
+    "message": "100% maximum"
+  },
+  "notDetermined": {
+    "message": "Not determined"
+  },
+  "reloadNeeded": {
+    "message": "Reload needed"
+  },
+  "available": {
+    "message": "Available"
+  },
+  "unavailable": {
+    "message": "Unavailable"
+  },
+  "somePlayersOnly": {
+    "message": "Some players only"
+  },
+  "waitingPlayer": {
+    "message": "Waiting for player"
+  },
+  "noMedia": {
+    "message": "No media detected"
+  },
+  "oneSource": {
+    "message": "1 source"
+  },
+  "sourceCount": {
+    "message": "$count$ sources",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "playing": {
+    "message": "Playing"
+  },
+  "waitingAudio": {
+    "message": "Waiting for audio"
+  },
+  "paused": {
+    "message": "Paused"
+  },
+  "audioReady": {
+    "message": "Audio ready"
+  },
+  "upTo100": {
+    "message": "Up to 100%"
+  },
+  "boostSupported": {
+    "message": "Boost supported"
+  },
+  "appliedPercent": {
+    "message": "$value$% applied",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "setPercent": {
+    "message": "$value$% set",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "limitedBoost": {
+    "message": "Limited boost"
+  },
+  "applyError": {
+    "message": "Couldn’t apply changes"
+  },
+  "applyingSettings": {
+    "message": "Applying your settings"
+  },
+  "waitingVolume": {
+    "message": "Waiting for the player to report its volume."
+  },
+  "reloadWithSiteControls": {
+    "message": "Reload to recover this player with site controls."
+  },
+  "restoreThenReload": {
+    "message": "Restore site audio, then reload to recover this player."
+  },
+  "playerUnavailable": {
+    "message": "Player unavailable"
+  },
+  "playerUnavailableHint": {
+    "message": "Waveform couldn’t connect. You can still use the site’s controls."
+  },
+  "startPlaybackHint": {
+    "message": "Start playback to let Waveform detect your audio."
+  },
+  "clickPlay": {
+    "message": "Click play to resume"
+  },
+  "interactionHint": {
+    "message": "Audio processing is waiting for interaction with the player."
+  },
+  "noMediaHint": {
+    "message": "Play audio or video on this page to get started."
+  },
+  "noAudioTrack": {
+    "message": "No audio track detected"
+  },
+  "noAudioTrackHint": {
+    "message": "The detected video does not contain audio."
+  },
+  "resumeToHearSettings": {
+    "message": "Start or resume the player to hear your settings."
+  },
+  "mutedInFirefox": {
+    "message": "Muted in Firefox"
+  },
+  "mutedInFirefoxDetail": {
+    "message": "Muted in Firefox."
+  },
+  "usingSiteControls": {
+    "message": "Using the site’s controls."
+  },
+  "protectedAudio": {
+    "message": "This player uses protected audio."
+  },
+  "unverifiedBoost": {
+    "message": "Waveform couldn’t verify this source for boosting."
+  },
+  "someVolumeLimited": {
+    "message": "Some players are limited to 100%."
+  },
+  "volumeLimited": {
+    "message": "Volume limited to 100%."
+  },
+  "boostUnavailable": {
+    "message": "Boost unavailable."
+  },
+  "appliedDetail": {
+    "message": "$value$% applied.",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "setDetail": {
+    "message": "$value$% set.",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "appliedMutedDetail": {
+    "message": "0% applied · muted."
+  },
+  "setMutedDetail": {
+    "message": "0% set · muted."
+  },
+  "volumeVaries": {
+    "message": "Volume varies by player."
+  },
+  "tabUpdateFailed": {
+    "message": "Could not update this tab. Try again."
+  },
+  "findingAudioTabs": {
+    "message": "Finding tabs with audio…"
+  },
+  "currentWindowUnavailable": {
+    "message": "Couldn’t find the current browser window."
+  },
+  "mixerLoadFailed": {
+    "message": "Couldn’t load tabs with audio. Reopen the mixer to try again."
+  },
+  "goToTab": {
+    "message": "Go to $title$",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      }
+    }
+  },
+  "muteTab": {
+    "message": "Mute $title$",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      }
+    }
+  },
+  "unmuteTab": {
+    "message": "Unmute $title$",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      }
+    }
+  },
+  "requestedTabVolume": {
+    "message": "Requested volume for $title$",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      }
+    }
+  },
+  "volumeUnavailable": {
+    "message": "Volume control unavailable"
+  },
+  "emptyMixer": {
+    "message": "No audible tabs. Play audio in a tab to see it here."
+  },
+  "preferencesLoadFailed": {
+    "message": "Couldn’t load saved preferences."
+  },
+  "saving": {
+    "message": "Saving…"
+  },
+  "settingsSaved": {
+    "message": "Changes saved."
+  },
+  "settingsSaveFailed": {
+    "message": "Couldn’t save changes. Please try again."
+  },
+  "confirmForgetSite": {
+    "message": "Forget saved settings for $domain$ and restore site audio in this tab?",
+    "placeholders": {
+      "domain": {
+        "content": "$1"
+      }
+    }
+  },
+  "forgotSite": {
+    "message": "Forgot saved settings for $domain$.",
+    "placeholders": {
+      "domain": {
+        "content": "$1"
+      }
+    }
+  },
+  "forgetSiteFailed": {
+    "message": "Couldn’t forget this site. Reopen Waveform and try again."
+  },
+  "confirmResetSites": {
+    "message": "Reset saved volume, control methods, and site-control preferences for every website? Your appearance and global settings will be kept."
+  },
+  "sitesReset": {
+    "message": "Saved sites reset. Open a new tab to use the defaults."
+  },
+  "sitesResetFailed": {
+    "message": "Couldn’t reset saved sites. Please try again."
+  },
+  "fallbackTabTitle": {
+    "message": "Tab $index$",
+    "placeholders": {
+      "index": {
+        "content": "$1"
+      }
+    }
+  },
+  "noActiveTab": {
+    "message": "No active tab"
+  },
+  "mixerTabChanged": {
+    "message": "This tab changed. Open the mixer again."
+  },
+  "mixerPlayerUnavailable": {
+    "message": "Waveform can’t adjust this player. You can still mute its tab."
+  },
+  "tabNavigated": {
+    "message": "The tab navigated to another website. Reopen Waveform."
+  },
+  "openWebsiteToForget": {
+    "message": "Open a website to forget its settings."
+  },
+  "invalidVolume": {
+    "message": "Enter a valid volume."
+  }
+}

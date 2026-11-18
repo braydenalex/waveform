@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Waveform",
+  "name": "__MSG_appName__",
   "version": "1.6.0",
-  "description": "Adjust audio volume and display other audio and video information.",
+  "description": "__MSG_appDescription__",
+  "default_locale": "en",
   "author": "Brayden Seaman",
   "browser_specific_settings": {
     "gecko": {
@@ -29,7 +30,7 @@
       "32": "icons/icon-32.png",
       "48": "icons/icon-48.png"
     },
-    "default_title": "Waveform"
+    "default_title": "__MSG_appName__"
   },
   "icons": {
     "16": "icons/icon-16.png",
