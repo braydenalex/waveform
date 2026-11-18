@@ -278,7 +278,7 @@
         if (mediaRecords.has(el)) { trackedMedia.add(el); return mediaRecords.get(el); }
         const record = {
             originalVolume: el.volume, lastWrite: null, source: null, gain: null,
-            pending: false, failedKey: null, failure: null, reloadRequired: false,
+            pending: false, failedKey: null, failure: null, reloadRequired: false, hasPlayed: el.played.length > 0,
             encrypted: !!el.mediaKeys, loadCors: null, loadKey: null, corsVerified: false
         };
         mediaRecords.set(el, record);
@@ -290,6 +290,7 @@
             record.encrypted = !!el.mediaKeys;
             record.failedKey = null;
             record.failure = null;
+            record.hasPlayed = false;
         };
         el.addEventListener('loadstart', onLoadStart);
         el.addEventListener('encrypted', () => {
@@ -300,12 +301,14 @@
             record.corsVerified = record.loadCors !== null && record.loadCors === el.crossOrigin &&
                 record.loadKey === (el.currentSrc || el.src);
         });
-        for (const event of ['loadedmetadata', 'loadeddata', 'durationchange', 'emptied', 'error', 'play', 'playing', 'pause', 'ended']) {
+        for (const event of ['loadedmetadata', 'loadeddata', 'canplay', 'durationchange', 'emptied', 'error',
+            'play', 'playing', 'pause', 'ended', 'waiting', 'seeking', 'seeked']) {
             el.addEventListener(event, () => {
                 if (event === 'emptied') {
                     record.corsVerified = false;
                     record.failedKey = null;
                 }
+                if (event === 'playing') record.hasPlayed = true;
                 if (event === 'play' || event === 'playing') {
                     trackedMedia.add(el);
                     recoverContext();
@@ -671,20 +674,23 @@
                 (siteGraph && siteContext.state === 'running' && pageGraphEnabled());
             const method = nativeVolumeControl ? 'site' : graph && currentMethod !== 'html5' &&
                 (siteGraph || currentMethod === 'webaudio' || currentVolume > 1) ? 'webaudio' : 'html5';
+            const loaded = el.readyState >= 2 && !el.error;
+            const playing = el.readyState >= 3 && !el.paused && !el.ended && !el.seeking && !el.error;
+            const paused = loaded && record.hasPlayed && el.paused && !el.ended;
             states.push({
-                loaded: el.readyState >= 2 || !!record.source || !!siteGraph,
+                loaded, playing, paused, waiting: !el.paused && !el.ended && !playing,
                 method, boost: !record.reloadRequired && (!!siteGraph || !failure),
                 failure: record.reloadRequired ? record.failure : (!nativeVolumeControl && record.pending) ||
                     (record.source && sharedContext.state !== 'running') ? contextFailure || 'interaction-required' : failure,
                 reload: record.reloadRequired,
-                volume: record.reloadRequired || (record.source && sharedContext.state !== 'running') ? null :
+                volume: !loaded || record.reloadRequired || (record.source && sharedContext.state !== 'running') ? null :
                     method === 'site' ? null : el.muted ? 0 :
                         el.volume * 100 * (method === 'webaudio' ? record.gain?.gain.value ?? currentVolume : 1)
             });
         });
         pageContexts.forEach((record, ctx) => {
             if (!record.edges.size) return;
-            states.push({ loaded: true, method: nativeVolumeControl || currentMethod === 'html5' ? 'site' : 'webaudio',
+            states.push({ loaded: ctx.state === 'running', method: nativeVolumeControl || currentMethod === 'html5' ? 'site' : 'webaudio',
                 boost: !record.failure, failure: record.failure ||
                     (ctx.state !== 'running' ? 'site-context-suspended' : null), reload: !!record.failure,
                 volume: nativeVolumeControl || currentMethod === 'html5' || ctx.state !== 'running' ? null : currentVolume * 100 });
@@ -696,8 +702,12 @@
         // Players often keep empty video elements for ads or the next item.
         // Keep their detection counts, but report capability for loaded players.
         const loaded = states.filter(state => state.loaded);
-        const playback = loaded.length ? loaded : states;
-        nextState.playbackCount = loaded.length;
+        const playing = loaded.filter(state => state.playing);
+        const playback = playing.length ? playing : loaded.length ? loaded : states;
+        nextState.loadedCount = loaded.length;
+        nextState.playingCount = playing.length;
+        nextState.pausedCount = loaded.filter(state => state.paused).length;
+        nextState.waitingCount = states.filter(state => state.waiting).length;
         nextState.controllableMediaCount = states.length;
         const methods = new Set(playback.map(state => state.method));
         nextState.effectiveMethod = methods.size > 1 ? 'mixed' : playback[0]?.method || 'site';

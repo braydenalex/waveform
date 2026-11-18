@@ -1,17 +1,19 @@
-"""Exercise the real popup DOM in a disposable Firefox profile with mocked browser APIs.
+"""Exercise the popup and the installed extension in a disposable Firefox profile.
 
 Usage: python3 tests/popup-smoke.py [firefox-path] [screenshot-directory]
-This checks UI behavior and layout; it does not verify real-site audio compatibility.
+This checks UI behavior, layout, and audio routing on local fixtures.
 Only Python's standard library is required.
 """
 import base64
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
+import math
 import os
 from pathlib import Path
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -169,7 +171,7 @@ def run_checks(c):
     check("fixture.settings.nativeVolumeControl === false && !document.getElementById('volumeSlider').disabled", 'positive switch enables Waveform using the existing setting')
     c.click('[data-volume="200"]')
     idle()
-    check("fixture.settings.volume === 200 && document.getElementById('statusTitle').textContent === 'Applied volume: 200%'", 'presets report the applied volume')
+    check("fixture.settings.volume === 200 && document.getElementById('statusTitle').textContent === 'Playing' && document.getElementById('statusDetail').textContent === '200% applied.'", 'presets report the applied volume for playing media')
     c.shot('light')
     layout('main panel')
     check("document.querySelector('.container').getBoundingClientRect().height <= 340", 'compact controls stay under 340px tall')
@@ -250,12 +252,18 @@ def run_checks(c):
     c.script("fixture.emit({effectiveVolume: 50}, {volume: 50}, 99);")
     check("document.getElementById('volumeValue').value === '200'", 'unrelated tab updates are ignored')
 
+    c.script("fixture.emit({loadedCount:0, playingCount:0, waitingCount:1, effectiveVolume:200});")
+    check("document.getElementById('statusTitle').textContent === 'Waiting for audio' && document.getElementById('effectiveVolume').textContent === '—'", 'loading media does not claim an applied volume')
+    c.script("fixture.emit({loadedCount:1, waitingCount:0, pausedCount:1});")
+    check("document.getElementById('statusTitle').textContent === 'Paused' && document.getElementById('playingCount').textContent === '0 / 3' && document.getElementById('effectiveVolumeLabel').textContent === 'Volume set'", 'loaded paused media is excluded from the playing count')
+    c.script("fixture.emit({playingCount:1, pausedCount:0});")
+
     c.script("fixture.emit({boostAvailable:false, effectiveMethod:'html5', effectiveVolume:100, failureReason:'protected-media'}, {volume:535});")
-    check("document.getElementById('statusTitle').textContent === 'Volume limited to 100%' && document.getElementById('effectiveVolume').textContent === '100%'", 'unsupported boost is never shown as applied')
+    check("!document.getElementById('requestedVolumeLabel').hidden && document.getElementById('boostStatus').textContent === '100% applied' && document.getElementById('effectiveVolume').textContent === '100%'", 'limited boost labels requested and applied volume next to each other')
     c.script("fixture.emit({effectiveVolume:0});")
     check("document.getElementById('effectiveVolume').textContent === '0%'", 'limited players still report a known muted volume')
     c.script("fixture.emit({effectiveVolume:535});")
-    check("document.getElementById('effectiveVolume').textContent === '100% maximum'", 'an unverified boost is not presented as an applied statistic')
+    check("document.getElementById('boostStatus').textContent === 'Up to 100%' && document.getElementById('effectiveVolume').textContent === '100% maximum'", 'unconfirmed volume is shown as a limit')
     c.script("fixture.emit({effectiveVolume:100});")
     c.shot('limited')
     c.click('#detailsToggle')
@@ -281,6 +289,35 @@ def run_checks(c):
     c.click('#reloadPageBtn')
     idle()
     check("fixture.messages.at(-1).type === 'reloadPage'", 'reload only sends a request when clicked')
+
+    c.click('#mixerToggle')
+    c.wait("document.getElementById('mixerStatus').textContent.startsWith('No audible tabs')")
+    check("document.activeElement.id === 'mixerBackBtn'", 'opening the mixer moves focus and describes an empty list')
+    c.script("""
+        fixture.mixerTabs = [
+            {tabId:8, domain:'music.example', title:'Study playlist with a very long title that should fit the mixer', audible:true, muted:false, maxVolume:1000, volume:80},
+            {tabId:9, domain:null, title:'Browser player', audible:false, muted:true, maxVolume:null, volume:null}
+        ];
+        fixture.tabUpdated.forEach(listener => listener(8, {audible:true}));
+    """)
+    c.wait("document.querySelectorAll('.mixer-tab').length === 2")
+    layout('mixer with a long title')
+    c.shot('mixer-light')
+    c.type('.mixer-tab:first-child .mixer-slider', '\ue014')
+    c.wait("fixture.mixerTabs[0].volume === 85")
+    check("fixture.settings.volume === 535 && document.activeElement.matches('.mixer-slider')", 'mixer keyboard volume changes the selected tab and preserves focus')
+    c.click('.mixer-tab:first-child .mixer-mute')
+    c.wait("document.querySelector('.mixer-mute').textContent === 'Unmute'")
+    check("fixture.mixerTabs[0].muted && document.querySelectorAll('.mixer-tab').length === 2", 'muted tabs remain available for unmute')
+    c.click('.mixer-tab:last-child .mixer-mute')
+    c.wait("!fixture.mixerTabs[1].muted")
+    check("document.querySelector('.mixer-tab:last-child .mixer-slider').disabled", 'uncontrollable tabs still support Firefox mute and unmute')
+    c.click('.mixer-tab:first-child .mixer-tab-title')
+    c.wait('fixture.focusedTabId === 8')
+    c.script("fixture.mixerTabs.splice(1, 1); fixture.tabRemoved.forEach(listener => listener(9));")
+    c.wait("document.querySelectorAll('.mixer-tab').length === 1")
+    c.click('#mixerBackBtn')
+    check("document.activeElement.id === 'mixerToggle'", 'leaving the mixer returns focus to its button')
 
     c.click('#settingsToggle')
     check("!document.getElementById('settingsPanel').hidden && document.getElementById('mainPanel').hidden && document.activeElement.id === 'backBtn'", 'settings navigation moves focus and hides playback controls')
@@ -312,10 +349,22 @@ def run_checks(c):
     check("document.getElementById('statusTitle').textContent === 'Couldn’t apply changes'", 'request errors are visible without claiming success')
     c.click('[data-volume="100"]')
     idle()
-    check("document.getElementById('statusTitle').textContent === 'Applied volume: 100%'", 'a subsequent successful request clears the error')
+    check("document.getElementById('statusTitle').textContent === 'Playing' && document.getElementById('statusDetail').textContent === '100% applied.'", 'a subsequent successful request clears the error')
+    c.click('#mixerToggle')
+    c.wait("document.querySelectorAll('.mixer-tab').length === 1")
+    layout('large-text mixer')
+    c.shot('mixer-large')
+    c.click('#mixerBackBtn')
     c.click('#settingsToggle')
     c.click('#accessibilityMode')
     c.script("fixture.storage['saved.example'] = {volume:200};")
+    c.click('#forgetSiteBtn')
+    c.call('WebDriver:DismissAlert')
+    check("!!fixture.storage['www.example.com']", 'canceling forget keeps the current site’s settings')
+    c.click('#forgetSiteBtn')
+    c.call('WebDriver:AcceptAlert')
+    c.wait("document.getElementById('settingsFeedback').textContent.startsWith('Forgot saved settings')")
+    check("!fixture.storage['www.example.com'] && fixture.storage['saved.example'].volume === 200 && fixture.settings.nativeVolumeControl", 'forget clears one site and restores site controls')
     c.click('#resetBtn')
     c.call('WebDriver:DismissAlert')
     check("fixture.storage['saved.example'].volume === 200", 'canceling a site reset preserves saved settings')
@@ -329,15 +378,20 @@ def run_checks(c):
     print(f'{checks} popup checks passed. Screenshots: {SHOTS}', flush=True)
 
 
-def check_installed_extension(c):
-    # A local, silent WAV provides a genuine media element without third-party sites.
+def wav_source(amplitude=0):
+    sample_rate = 8000
     wav_data = io.BytesIO()
     with wave.open(wav_data, 'wb') as audio:
         audio.setnchannels(1)
         audio.setsampwidth(2)
-        audio.setframerate(8000)
-        audio.writeframes(b'\0\0' * 8000)
-    source = base64.b64encode(wav_data.getvalue()).decode()
+        audio.setframerate(sample_rate)
+        audio.writeframes(b''.join(struct.pack('<h', round(amplitude * math.sin(math.tau * 220 * i / sample_rate)))
+                                   for i in range(sample_rate)))
+    return base64.b64encode(wav_data.getvalue()).decode()
+
+
+def check_installed_extension(c):
+    source = wav_source()
     # A hostile page script: it replaces the built-ins a page-world bridge could
     # use, records anything mentioning Waveform, and offers a fake bridge port.
     probe = """<script>
@@ -357,14 +411,20 @@ def check_installed_extension(c):
     fake.port1.onmessage = () => { __probe.hijacked++; };
     window.postMessage('waveform:bridge:v1', '*', [fake.port2]);
     </script>"""
-    page = f'<!doctype html><title>Waveform UI fixture</title>{probe}<audio id="player" controls preload="auto" src="data:audio/wav;base64,{source}"></audio>'.encode()
+    def media_page(title, encoded):
+        return (f'<!doctype html><title>{title}</title>{probe}'
+                f'<audio id="player" controls preload="auto" src="data:audio/wav;base64,{encoded}"></audio>'
+                '<button id="playFixture" onclick="player.loop=true; player.play()">Play fixture</button>').encode()
+
+    page = media_page('Waveform UI fixture', source)
+    mixer_page = media_page('Waveform mixer fixture', wav_source(128))
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             self.send_response(200)
             self.send_header('Content-Type', 'text/html')
             self.end_headers()
-            self.wfile.write(page)
+            self.wfile.write(mixer_page if self.path == '/mixer' else page)
 
         def log_message(self, *_):
             pass
@@ -385,22 +445,45 @@ def check_installed_extension(c):
         c.call('WebDriver:Navigate', {'url': f'moz-extension://{uuid}/popup/popup.html'})
         # The real popup is normally outside the tab strip. Keep the fixture active
         # while Marionette inspects the popup's separate browsing context.
-        c.script("browser.tabs.query({}).then(tabs => browser.tabs.update(tabs.find(tab => tab.url === " + json.dumps(target_url) + ").id, {active:true})).then(() => init());")
-        c.wait("document.getElementById('domain').textContent === '127.0.0.1'")
+        def init_popup():
+            c.script("browser.tabs.query({}).then(tabs => browser.tabs.update(tabs.find(tab => tab.url === " + json.dumps(target_url) + ").id, {active:true})).then(() => init());")
+            c.wait("document.getElementById('domain').textContent === '127.0.0.1'")
+
+        init_popup()
         c.wait("document.getElementById('audioCount').textContent === '1'")
         c.script("document.getElementById('waveformEnabled').click();")
         c.wait("!document.getElementById('restoreAudioBtn').disabled")
         c.script("document.querySelector('[data-volume=\"50\"]').click();")
-        c.wait("document.getElementById('statusTitle').textContent === 'Applied volume: 50%'")
+        c.wait("document.getElementById('statusTitle').textContent === 'Audio ready' && document.getElementById('statusDetail').textContent === '50% set.'")
         c.shot('installed-extension')
         c.call('WebDriver:SwitchToWindow', {'handle': target_handle})
         c.wait("document.getElementById('player').volume === .5")
         c.call('WebDriver:SwitchToWindow', {'handle': popup_handle})
         c.script("document.getElementById('muteBtn').click();")
-        c.wait("document.getElementById('statusTitle').textContent === 'Applied volume: 0%'")
+        c.wait("document.getElementById('statusDetail').textContent === '0% set · muted.'")
         c.call('WebDriver:SwitchToWindow', {'handle': target_handle})
         c.wait("document.getElementById('player').volume === 0")
         c.call('WebDriver:SwitchToWindow', {'handle': popup_handle})
+        c.call('WebDriver:Refresh')
+        init_popup()
+        c.wait("document.getElementById('muteBtn').title === 'Restore 50% (M)'")
+        c.script("document.getElementById('muteBtn').click();")
+        c.wait("document.getElementById('statusDetail').textContent === '50% set.'")
+        c.call('WebDriver:SwitchToWindow', {'handle': target_handle})
+        c.wait("document.getElementById('player').volume === .5")
+        print('PASS: reopening Waveform restores the pre-mute level', flush=True)
+        c.click('#playFixture')
+        c.call('WebDriver:SwitchToWindow', {'handle': popup_handle})
+        c.wait("document.getElementById('statusTitle').textContent === 'Playing' && document.getElementById('playingCount').textContent === '1 / 1'")
+        c.call('WebDriver:SwitchToWindow', {'handle': target_handle})
+        c.script("document.getElementById('player').pause();")
+        c.call('WebDriver:SwitchToWindow', {'handle': popup_handle})
+        c.wait("document.getElementById('statusTitle').textContent === 'Paused' && document.getElementById('playingCount').textContent === '0 / 1'")
+        c.call('WebDriver:SwitchToWindow', {'handle': target_handle})
+        c.script("const player = document.getElementById('player'); player.removeAttribute('src'); player.load();")
+        c.call('WebDriver:SwitchToWindow', {'handle': popup_handle})
+        c.wait("document.getElementById('statusTitle').textContent === 'Waiting for audio' && document.getElementById('effectiveVolume').textContent === '—'")
+        print('PASS: the installed popup distinguishes playing, paused, and unloaded media', flush=True)
         c.script("document.getElementById('restoreAudioBtn').click();")
         c.wait("!document.getElementById('waveformEnabled').checked && !document.getElementById('restoreAudioBtn').disabled")
         c.call('WebDriver:SwitchToWindow', {'handle': target_handle})
@@ -412,12 +495,161 @@ def check_installed_extension(c):
         c.call('WebDriver:Refresh')
         c.wait("document.getElementById('player').readyState >= 2")
         c.call('WebDriver:SwitchToWindow', {'handle': popup_handle})
-        c.script("browser.tabs.query({}).then(tabs => browser.tabs.update(tabs.find(tab => tab.url === " + json.dumps(target_url) + ").id, {active:true})).then(() => init());")
-        c.wait("document.getElementById('domain').textContent === '127.0.0.1' && !document.getElementById('waveformEnabled').checked")
+        init_popup()
+        c.wait("!document.getElementById('waveformEnabled').checked")
         print('PASS: installed extension controls real element volume, mutes, restores, and remembers site controls after reload', flush=True)
+        check_boost_signal(c, target_handle, popup_handle)
+        check_tab_mixer(c, target_handle, popup_handle, target_url + 'mixer')
+        init_popup()
+        check_forget_site(c, target_handle, popup_handle)
     finally:
         server.shutdown()
         server.server_close()
+
+
+def check_boost_signal(c, target_handle, popup_handle):
+    def select(handle):
+        c.call('WebDriver:SwitchToWindow', {'handle': handle})
+
+    def measure(amplitude):
+        # The WAV peak is amplitude / 32768, and a sine's RMS is peak / sqrt(2).
+        expected = amplitude / 32768 / math.sqrt(2)
+        try:
+            c.wait(f'Math.abs(window.toneRms?.() - {expected}) < {expected * .07}')
+        except AssertionError as error:
+            player = c.script("const p = document.getElementById('player'); return {time:p.currentTime, paused:p.paused, ready:p.readyState, volume:p.volume, rms: window.toneRms?.()};")
+            select(popup_handle)
+            status = c.script("return document.getElementById('playbackStatus').textContent;").strip()
+            raise AssertionError(f'Expected RMS {expected:.3f}, got {player}. Popup status: {status}') from error
+
+    def play_tone(amplitude):
+        c.script(f'window.setTone({json.dumps(wav_source(amplitude))});')
+        c.wait("document.getElementById('player').readyState >= 2")
+        c.click('#playTone')
+
+    select(target_handle)
+    # Tap Waveform's real GainNode using an analyser. This measures PCM after
+    # processing and avoids depending on the machine's audio output device.
+    c.script("""
+        const createGain = AudioContext.prototype.createGain;
+        AudioContext.prototype.createGain = function () {
+            const gain = createGain.call(this);
+            const analyser = this.createAnalyser();
+            gain.connect(analyser);
+            const samples = new Float32Array(analyser.fftSize);
+            window.toneRms = () => {
+                analyser.getFloatTimeDomainData(samples);
+                return Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
+            };
+            return gain;
+        };
+        const player = document.getElementById('player');
+        const originalSource = player.src;
+        window.setTone = encoded => {
+            if (player.src.startsWith('blob:')) URL.revokeObjectURL(player.src);
+            player.src = encoded ? URL.createObjectURL(new Blob([Uint8Array.from(atob(encoded), c => c.charCodeAt(0))],
+                {type: 'audio/wav'})) : originalSource;
+        };
+        player.loop = true;
+        const play = document.createElement('button');
+        play.id = 'playTone';
+        play.textContent = 'Play fixture audio';
+        play.addEventListener('click', () => player.play());
+        document.body.append(play);
+    """)
+    select(popup_handle)
+    c.script("document.getElementById('waveformEnabled').click(); document.querySelector('[data-volume=\"400\"]').click();")
+    c.wait("document.getElementById('volumeValue').value === '400'")
+    select(target_handle)
+    # Keep the fixture tone quiet even at 400%.
+    play_tone(128)
+    measure(128 * 4)
+    print('PASS: the installed Web Audio route applies 4× gain to real audio samples', flush=True)
+
+    select(popup_handle)
+    c.script("document.getElementById('settingsToggle').click(); const max = document.getElementById('maxVolumeSelect'); max.value = '200'; max.dispatchEvent(new Event('change'));")
+    c.wait("document.getElementById('volumeValue').value === '200' && document.getElementById('maxLabel').textContent === '200%'")
+    c.script("document.getElementById('backBtn').click();")
+    select(target_handle)
+    measure(128 * 2)
+    play_tone(64)
+    measure(64 * 2)
+    print('PASS: lowering Maximum volume reduces live gain, and boost survives a compatible source change', flush=True)
+
+    select(popup_handle)
+    c.script("document.getElementById('restoreAudioBtn').click();")
+    c.wait("!document.getElementById('waveformEnabled').checked")
+    select(target_handle)
+    measure(64)
+    print('PASS: restoring site audio returns the routed signal to unity gain', flush=True)
+
+    select(popup_handle)
+    c.script("document.getElementById('waveformEnabled').click();")
+    c.wait("document.getElementById('statusDetail').textContent === '200% applied.'")
+    select(target_handle)
+    c.script('window.setTone(null);')
+    c.wait("document.getElementById('player').readyState >= 2")
+    select(popup_handle)
+    c.wait("!document.getElementById('reloadPageBtn').hidden")
+    c.script("document.getElementById('reloadPageBtn').click();")
+    select(target_handle)
+    c.wait("!window.toneRms && document.getElementById('player').readyState >= 2")
+    select(popup_handle)
+    c.wait("!document.getElementById('waveformEnabled').checked && document.getElementById('reloadPageBtn').hidden")
+    print('PASS: an unsupported source change offers reload and recovers with site controls', flush=True)
+
+
+def check_tab_mixer(c, target_handle, popup_handle, mixer_url):
+    mixer_handle = c.call('WebDriver:NewWindow', {'type': 'tab'})['handle']
+    c.call('WebDriver:SwitchToWindow', {'handle': mixer_handle})
+    c.call('WebDriver:Navigate', {'url': mixer_url})
+    c.wait("document.getElementById('player').readyState >= 2")
+    c.click('#playFixture')
+    c.call('WebDriver:SwitchToWindow', {'handle': popup_handle})
+    c.script("document.getElementById('mixerToggle').click();")
+    c.wait("document.querySelector('.mixer-tab-title')?.textContent === 'Waveform mixer fixture' && !document.querySelector('.mixer-slider').disabled")
+    c.script("const slider = document.querySelector('.mixer-slider'); slider.value = '250'; slider.dispatchEvent(new Event('input')); slider.dispatchEvent(new Event('change'));")
+    c.call('WebDriver:SwitchToWindow', {'handle': mixer_handle})
+    c.wait("document.getElementById('player').volume === .5")
+    c.call('WebDriver:SwitchToWindow', {'handle': target_handle})
+    assert c.script("return document.getElementById('player').volume === 1;"), 'Mixer changed the wrong tab'
+    c.call('WebDriver:SwitchToWindow', {'handle': popup_handle})
+    is_muted = f"browser.tabs.query({{muted:true}}).then(tabs => tabs.some(tab => tab.url === {json.dumps(mixer_url)}))"
+    c.script("document.querySelector('.mixer-mute').click();")
+    c.wait("document.querySelector('.mixer-mute')?.textContent === 'Unmute'")
+    assert c.script('return ' + is_muted), 'Mixer did not set native tab mute'
+    c.script("document.querySelector('.mixer-mute').click();")
+    c.wait("document.querySelector('.mixer-mute')?.textContent === 'Mute'")
+    assert not c.script('return ' + is_muted), 'Mixer did not clear native tab mute'
+    c.shot('installed-mixer')
+    target_url = json.dumps(mixer_url.removesuffix('mixer'))
+    c.script(f"return browser.tabs.query({{}}).then(tabs => browser.tabs.update(tabs.find(tab => tab.url === {target_url}).id, {{active:true}}));")
+    c.script("""
+        browser.tabs.onActivated.addListener(({tabId}) => browser.tabs.get(tabId).then(tab => {window.mixerFocused = tab.url;}));
+        document.querySelector('.mixer-tab-title').click();
+    """)
+    c.wait(f'window.mixerFocused === {json.dumps(mixer_url)}')
+    c.script("document.getElementById('mixerBackBtn').click();")
+    print('PASS: the installed mixer adjusts and mutes a real audible background tab', flush=True)
+
+
+def check_forget_site(c, target_handle, popup_handle):
+    c.script("""
+        document.getElementById('waveformEnabled').click();
+        document.querySelector('[data-volume="50"]').click();
+        return browser.storage.local.set({'other.example': {volume: 25}});
+    """)
+    c.wait("document.getElementById('statusDetail').textContent === '50% set.'")
+    c.script("document.getElementById('settingsToggle').click();")
+    c.click('#forgetSiteBtn')
+    c.call('WebDriver:AcceptAlert')
+    c.wait("document.getElementById('settingsFeedback').textContent.startsWith('Forgot saved settings')")
+    saved = c.script("return browser.storage.local.get(['127.0.0.1', 'other.example', '_globalSettings']);")
+    assert '127.0.0.1' not in saved and saved['other.example']['volume'] == 25 and saved['_globalSettings']['maxVolume'] == 200
+    c.call('WebDriver:SwitchToWindow', {'handle': target_handle})
+    c.wait("document.getElementById('player').volume === 1")
+    c.call('WebDriver:SwitchToWindow', {'handle': popup_handle})
+    print('PASS: forgetting the current site restores its audio and preserves other settings', flush=True)
 
 
 if __name__ == '__main__':

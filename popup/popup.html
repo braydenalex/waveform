@@ -11,7 +11,8 @@
     <h1 class="sr-only">Waveform</h1>
     <header class="header">
       <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 10v4m4-8v12m4-15v18m4-15v12m4-8v4"/></svg></div>
-      <div class="brand-copy"><p id="domain" title="Current website">Connecting…</p><p id="nativeControlHint">Use the site’s volume controls</p></div>
+      <div class="brand-copy"><p id="domain" title="Current website">Connecting…</p><p id="nativeControlHint">Site controls</p></div>
+      <button class="icon-button" id="mixerToggle" aria-label="Open tab mixer" aria-controls="mixerPanel" aria-expanded="false" title="Tab mixer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v9m0 4v5m7-18v3m0 4v11m7-18v11m0 4v3M2 12h6m1-6h6m1 12h6"/></svg></button>
       <button class="icon-button" id="detailsToggle" aria-label="Show media details" aria-controls="detailsPanel" aria-expanded="false" title="Media details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-6m5 6V9m5 11v-9m5 9V5"/></svg></button>
       <button class="icon-button" id="settingsToggle" aria-label="Open settings" aria-controls="settingsPanel" aria-expanded="false" title="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-.5 2-2 1.2-2-.6-2 3.4 1.5 1.4v2.4L2.5 14l2 3.4 2-.6 2 1.2.5 2h4l.5-2 2-1.2 2 .6 2-3.4-1.5-1.2v-2.4l1.5-1.4-2-3.4-2 .6-2-1.2L13 3Z"/><circle cx="11" cy="11.5" r="3"/></svg></button>
       <span class="switch" title="Enable Waveform on this site"><input type="checkbox" id="waveformEnabled" role="switch" aria-label="Enable Waveform on this site" aria-describedby="nativeControlHint" disabled><span class="switch-track"></span></span>
@@ -21,11 +22,14 @@
       <section class="volume-card" aria-label="Volume controls">
         <div class="volume-row">
           <button class="step-button" id="decreaseVolume" aria-label="Decrease volume by 5%" title="Decrease by 5%" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg></button>
-          <div class="volume-number"><label for="volumeValue" id="volumeCaption" class="sr-only">Requested volume</label><input id="volumeValue" type="number" min="0" max="1000" step="1" value="100" inputmode="numeric" disabled><span aria-hidden="true">%</span></div>
+          <div class="volume-reading">
+            <div class="volume-number"><label for="volumeValue" id="volumeCaption" class="sr-only">Requested volume</label><input id="volumeValue" aria-describedby="boostStatus" type="number" min="0" max="1000" step="1" value="100" inputmode="numeric" disabled><span aria-hidden="true">%</span></div>
+            <span id="requestedVolumeLabel" aria-hidden="true" hidden>Requested</span>
+          </div>
           <button class="step-button" id="increaseVolume" aria-label="Increase volume by 5%" title="Increase by 5%" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12"/></svg></button>
           <span class="capability" id="boostStatus">Checking player</span>
         </div>
-        <input aria-label="Requested volume" aria-describedby="playbackStatus" type="range" id="volumeSlider" min="0" max="1000" value="500" step="1" disabled>
+        <input aria-label="Requested volume" aria-describedby="boostStatus playbackStatus" type="range" class="volume-slider" id="volumeSlider" min="0" max="1000" value="500" step="1" disabled>
         <div class="volume-labels" aria-hidden="true"><span>0%</span><span id="midLabel">100%</span><span id="maxLabel">1000%</span></div>
         <div class="quick-buttons" role="group" aria-label="Volume presets">
           <button class="quick-btn" id="muteBtn" data-volume="0" aria-pressed="false" title="Mute (M)" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4Zm5 4 5 6m0-6-5 6"/></svg><span id="muteLabel" class="sr-only">Mute</span></button>
@@ -59,17 +63,36 @@
         <div><dt>Video elements</dt><dd id="videoCount">—</dd></div>
         <div><dt>Audio elements</dt><dd id="audioCount">—</dd></div>
         <div><dt>Web Audio contexts</dt><dd id="contextCount">—</dd></div>
-        <div><dt>Playing / detected</dt><dd id="playbackCount">—</dd></div>
+        <div><dt>Playing media elements</dt><dd id="playingCount">—</dd></div>
         <div><dt>Controllable sources</dt><dd id="controllableCount">—</dd></div>
         <div><dt>Stream format</dt><dd id="streamFormat">Not detected</dd></div>
         <div><dt>Video codec</dt><dd id="videoCodecs">Not detected</dd></div>
         <div><dt>Audio codec</dt><dd id="audioCodecs">Not detected</dd></div>
         <div><dt>Active method</dt><dd id="effectiveMethod">—</dd></div>
-        <div><dt>Applied volume</dt><dd id="effectiveVolume">—</dd></div>
+        <div><dt id="effectiveVolumeLabel">Applied volume</dt><dd id="effectiveVolume">—</dd></div>
         <div><dt>Boost support</dt><dd id="boostSupport">Checking</dd></div>
       </dl>
       <p class="section-hint">Detected elements may include background or silent players.</p>
     </section>
+
+    <section id="mixerPanel" class="subview" hidden aria-labelledby="mixerTitle">
+      <div class="subview-heading"><button class="icon-button" id="mixerBackBtn" aria-label="Back to volume controls" title="Back to controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 5-7 7 7 7M5 12h15"/></svg></button><h2 id="mixerTitle">Tab mixer</h2></div>
+      <ul id="mixerTabs" class="mixer-tabs" aria-label="Tabs with audio"></ul>
+      <p id="mixerStatus" class="mixer-status" role="status"></p>
+    </section>
+    <template id="mixerTabTemplate">
+      <li class="mixer-tab">
+        <div class="mixer-tab-heading">
+          <button type="button" class="mixer-tab-title text-button"></button>
+          <button type="button" class="mixer-mute text-button">Mute</button>
+        </div>
+        <div class="mixer-volume">
+          <input type="range" class="volume-slider mixer-slider" min="0" max="1000" step="1" aria-label="Requested volume">
+          <span class="mixer-level" aria-hidden="true"></span>
+        </div>
+        <p class="mixer-tab-status"></p>
+      </li>
+    </template>
 
     <section id="settingsPanel" class="subview" hidden aria-labelledby="settingsTitle">
       <div class="subview-heading"><button class="icon-button" id="backBtn" aria-label="Back to volume controls" title="Back to controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 5-7 7 7 7M5 12h15"/></svg></button><div><h2 id="settingsTitle">Settings</h2><p>Changes save automatically.</p></div></div>
@@ -85,7 +108,12 @@
         <div class="setting-row"><label for="themeSelect" class="row-title">Theme</label><select id="themeSelect"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
         <label class="setting-row" for="accessibilityMode"><span><span class="row-title">Larger text</span><span class="row-description">More room. Easier to read.</span></span><span class="switch"><input type="checkbox" id="accessibilityMode" role="switch"><span class="switch-track"></span></span></label>
       </div>
-      <div class="settings-footer"><button class="text-button danger" id="resetBtn">Reset all saved sites</button><p id="settingsFeedback" role="status" aria-live="polite"></p></div>
+      <h3 class="group-label">Saved sites</h3>
+      <div class="settings-footer">
+        <button class="text-button" id="forgetSiteBtn" disabled>Forget settings for this site</button>
+        <button class="text-button danger" id="resetBtn">Reset all saved sites</button>
+        <p id="settingsFeedback" role="status" aria-live="polite"></p>
+      </div>
     </section>
   </div>
   <script src="popup.js"></script>

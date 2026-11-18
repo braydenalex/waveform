@@ -2,7 +2,7 @@
 window.fixture = {
     settings: { volume: 100, method: 'both', nativeVolumeControl: true },
     state: {
-        ready: true, mediaCount: 3, playbackCount: 1, controllableMediaCount: 2,
+        ready: true, mediaCount: 3, loadedCount: 1, playingCount: 1, pausedCount: 0, waitingCount: 0, controllableMediaCount: 2,
         hasHTML5Video: true, html5VideoCount: 2, hasHTML5Audio: true, html5AudioCount: 1,
         hasWebAudio: true, webAudioContextCount: 1,
         streamType: { type: 'DASH' },
@@ -10,7 +10,7 @@ window.fixture = {
         effectiveMethod: 'site', effectiveVolume: null, boostAvailable: true,
         failureReason: null, reloadRequired: false
     },
-    storage: {}, messages: [], listeners: [], errors: [],
+    storage: {}, messages: [], listeners: [], errors: [], mixerTabs: [], tabUpdated: [], tabRemoved: [],
     emit(state = {}, settings = {}, tabId = 7) {
         if (tabId === 7) {
             Object.assign(this.state, state);
@@ -29,12 +29,25 @@ window.browser = {
             fixture.messages.push(structuredClone(request));
             if (request.type === 'getTabInfo') return { tabId: 7, domain: 'www.example.com', hasRuntimeSettings: true, settings: { ...fixture.settings }, audioState: { ...fixture.state } };
             if (request.type === 'getTabStatus') return { audioState: { ...fixture.state } };
+            if (request.type === 'getMixerTabs') return { success: true, tabs: structuredClone(fixture.mixerTabs) };
+            if (['setMixerVolume', 'setMixerMuted', 'focusMixerTab'].includes(request.type)) {
+                const tab = fixture.mixerTabs.find(tab => tab.tabId === request.tabId);
+                if (!tab) return { success: false, error: 'The tab was closed.' };
+                if (request.type === 'setMixerVolume') tab.volume = request.volume;
+                if (request.type === 'setMixerMuted') tab.muted = request.muted;
+                if (request.type === 'focusMixerTab') fixture.focusedTabId = tab.tabId;
+                return { success: true };
+            }
             if (fixture.delayNext) {
                 fixture.delayNext = false;
                 await new Promise(resolve => { fixture.release = resolve; });
             }
             if (fixture.failNext) { fixture.failNext = false; return { success: false, error: 'The player did not respond.' }; }
             if (request.type === 'updateTabSettings') Object.assign(fixture.settings, request.settings);
+            if (request.type === 'forgetSite') {
+                delete fixture.storage[request.domain];
+                Object.assign(fixture.settings, { volume: 100, method: 'both', nativeVolumeControl: true });
+            }
             if (['restoreSiteAudio', 'reloadPage'].includes(request.type)) {
                 fixture.settings.nativeVolumeControl = true;
                 fixture.storage['www.example.com'] = { ...fixture.settings };
@@ -43,6 +56,10 @@ window.browser = {
             fixture.state.effectiveVolume = fixture.settings.nativeVolumeControl ? null : fixture.state.boostAvailable ? fixture.settings.volume : Math.min(100, fixture.settings.volume);
             return { success: true, settings: { ...fixture.settings }, audioState: { ...fixture.state } };
         }
+    },
+    tabs: {
+        onUpdated: { addListener: listener => fixture.tabUpdated.push(listener) },
+        onRemoved: { addListener: listener => fixture.tabRemoved.push(listener) }
     },
     storage: { local: {
         async get(key) { return structuredClone(key ? { [key]: fixture.storage[key] } : fixture.storage); },
