@@ -55,24 +55,35 @@ Install directly from the Firefox Add-ons store for automatic updates.
 2. Turn on the switch at the top right to enable Waveform for the current website
 3. Drag the slider, type an exact percentage, or use the − / + buttons. The middle of
    the slider is 100%; the right half covers boost levels up to your maximum
-4. Use the presets (50, 100, 200, 400) for common levels; the speaker button mutes and
-   restores your previous level
+4. Use the presets (50, 100, 200, 400) for common levels. The speaker button mutes
+   and restores your previous level even after you reopen the popup
 5. Leave the method on **Auto**, or select **Standard** or **Boost**
-6. Read the one-line status under the presets; the large number is your requested level
+6. The large number is your requested level. When boost is limited, the popup shows
+   the applied level beside it if the player reports one. The status distinguishes
+   audio that is loading, ready, playing, or paused
 7. Click the bar-chart button for **Media details**: source counts, stream format, codecs,
    applied volume, and boost support
 
+### Tab mixer
+
+Open **Tab mixer** from the sliders button in the popup header. Select a tab’s
+title to go to it, use its slider to adjust Waveform volume for that tab, or use
+**Mute** and **Unmute** to control Firefox tab mute. Muted tabs stay in the list
+so you can unmute them. On pages Waveform can’t adjust, Firefox mute is still available.
+
 ### Settings
-- **Max Volume**: Set the upper limit (200% - 10000%)
+- **Maximum volume** sets the upper limit across tabs (200%–10000%).
 - **Remember Control Method**: Save your preferred method per website
 - **Remember Volume**: Save volume per website
 - **Keep volume between videos**: Reapply volume when a player resets it
 - **Theme**: System (follows Firefox and your OS), Light, or Dark
 - **Larger text**: Enable larger fonts and controls
 
-Open settings with the gear button. Changes save automatically; use the back arrow
-or Escape to return to the controls. **Reset all saved sites** clears site preferences
-after confirmation while keeping global settings.
+Open settings with the gear button. Changes save automatically. Use the back arrow
+or Escape to return to the controls. **Forget settings for this site** clears the
+current website’s saved preferences and restores site audio in the current tab.
+**Reset all saved sites** clears saved website preferences after confirmation and
+keeps global settings.
 
 ## Playback compatibility and recovery
 
@@ -126,10 +137,10 @@ npm run package
 ```
 
 The Firefox runner checks the popup against deterministic state fixtures, then
-temporarily installs the extension and verifies volume, mute, and recovery against
-a local media element. It uses a disposable profile and writes screenshots to
-`/tmp/waveform-ui` by default. See [test coverage](tests/README.md) for scope and
-remaining playback checks. The archive in `dist/` contains only runtime files,
+temporarily installs the extension and verifies element volume, actual Web Audio
+gain, and recovery against a local media element. It uses a disposable profile
+and writes screenshots to `/tmp/waveform-ui` by default. See the [test coverage](tests/README.md)
+for remaining playback checks. The archive in `dist/` contains only runtime files,
 icons, and the license. Pull requests and tagged releases must pass the regression checks.
 
 ## Keyboard Shortcuts (in popup)

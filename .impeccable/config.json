@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "popup/popup.html"
+        ],
+        "createdAt": "2026-11-18T04:33:13.541Z",
+        "reason": "Agent review: the existing Auto, Standard, and Boost segmented control uses a compact outer inset. Its labels are centered with visible clearance in standard and larger-text Firefox renders."
+      }
+    ]
+  }
+}
