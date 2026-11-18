@@ -18,6 +18,7 @@ function loadBackground(stored = {}, session = {}) {
   const storage = { ...stored };
   const writes = [];
   const browser = {
+    i18n: { getMessage: key => key },
     runtime: {
       onConnect: listener(), onMessage: listener(),
       getURL: file => `moz-extension://test/${file}`,

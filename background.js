@@ -182,11 +182,15 @@ function mixerTab(info) {
   const settings = canAdjust ? tab.settings : null;
   return {
     tabId: info.id, domain,
-    title: shortText(info.title, 200) || domain || `Tab ${info.index + 1}`,
+    title: shortText(info.title, 200) || domain || browser.i18n.getMessage('fallbackTabTitle', String(info.index + 1)),
     audible: !!info.audible, muted: !!info.mutedInfo?.muted,
     volume: settings?.nativeVolumeControl === false ? settings.volume : null,
     maxVolume: settings ? (settings.method === 'html5' ? 100 : tab.maxVolume) : null
   };
+}
+
+function commandError(key) {
+  return { success: false, error: browser.i18n.getMessage(key) };
 }
 
 async function getMixerTabs(sourceTabId) {
@@ -295,7 +299,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
   if (!message || (sender.tab && !sender.url?.startsWith(browser.runtime.getURL('')))) return false;
   if (message.type === 'getTabInfo') {
     return browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
-      if (!tabs[0]) return { error: 'No active tab' };
+      if (!tabs[0]) return commandError('noActiveTab');
       const active = tabs[0];
       return queueTab(active.id, async () => {
         const tab = await ensureTab(active.id, active.url);
@@ -303,10 +307,10 @@ browser.runtime.onMessage.addListener((message, sender) => {
         return { tabId: active.id, domain: tab.domain, muted: !!active.mutedInfo?.muted, audible: !!active.audible,
           settings: popupSettings(tab), hasRuntimeSettings: true, audioState: aggregateState(tab) };
       });
-    }).catch(error => ({ error: error.message }));
+    }).catch(() => commandError('openWebsiteToUse'));
   }
   if (!Number.isInteger(message.tabId)) return false;
-  if (message.type === 'getMixerTabs') return getMixerTabs(message.tabId).catch(error => ({ success: false, error: error.message }));
+  if (message.type === 'getMixerTabs') return getMixerTabs(message.tabId).catch(() => commandError('mixerLoadFailed'));
   const mixerAction = ['setMixerVolume', 'setMixerMuted', 'focusMixerTab'].includes(message.type);
   if (!mixerAction && !['updateTabSettings', 'restoreSiteAudio', 'reloadPage', 'getTabStatus', 'forgetSite'].includes(message.type)) return false;
   return queueTab(message.tabId, async () => {
@@ -315,7 +319,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
       const source = await browser.tabs.get(message.sourceTabId);
       const target = mixerTab(info);
       if (!!source.incognito !== !!info.incognito || message.domain !== target.domain) {
-        throw new Error('This tab changed. Open the mixer again.');
+        return commandError('mixerTabChanged');
       }
       if (message.type === 'setMixerMuted') {
         await browser.tabs.update(info.id, { muted: message.muted === true });
@@ -326,21 +330,21 @@ browser.runtime.onMessage.addListener((message, sender) => {
         if (info.windowId !== source.windowId) await browser.windows.update(info.windowId, { focused: true });
         return { success: true };
       }
-      if (target.maxVolume === null) throw new Error('Waveform can’t adjust this player. You can still mute its tab.');
+      if (target.maxVolume === null) return commandError('mixerPlayerUnavailable');
     }
     const tab = await ensureTab(message.tabId, info.url);
-    if (message.domain !== undefined && message.domain !== tab.domain) throw new Error('The tab navigated to another website. Reopen Waveform.');
+    if (message.domain !== undefined && message.domain !== tab.domain) return commandError('tabNavigated');
     if (message.type === 'updateTabSettings' || message.type === 'setMixerVolume' || message.type === 'forgetSite') {
       const previous = tab.settings;
       const stored = await browser.storage.local.get('_globalSettings');
       const global = stored._globalSettings || {};
       let settings = message.settings;
       if (message.type === 'forgetSite') {
-        if (!tab.domain) throw new Error('Open a website to forget its settings.');
+        if (!tab.domain) return commandError('openWebsiteToForget');
         await queueSiteStorage(() => browser.storage.local.remove(tab.domain));
         settings = { volume: 100, method: 'both', nativeVolumeControl: true };
       } else if (message.type === 'setMixerVolume') {
-        if (!Number.isFinite(message.volume)) throw new Error('Enter a valid volume.');
+        if (!Number.isFinite(message.volume)) return commandError('invalidVolume');
         settings = { volume: message.volume, nativeVolumeControl: false };
       }
       applyTabSettings(tab, global, settings);
@@ -364,5 +368,5 @@ browser.runtime.onMessage.addListener((message, sender) => {
       sendFrames(tab, { type: 'get-state' });
     }
     return { success: true, settings: popupSettings(tab), audioState: aggregateState(tab) };
-  }).catch(error => ({ success: false, error: error.message }));
+  }).catch(() => commandError('tabUpdateFailed'));
 });

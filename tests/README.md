@@ -9,6 +9,8 @@ python3 tests/popup-smoke.py /path/to/firefox /tmp/waveform-ui
 The runner uses a fresh temporary Firefox profile and removes it on completion.
 It never opens a signed-in browser profile. `FIREFOX_BIN` can also select a binary;
 otherwise the runner checks PATH and the standard macOS Firefox location.
+On Linux CI, the workflow supplies a virtual PulseAudio output so Firefox can
+advance real media playback and process the Web Audio test signal.
 
 The popup fixtures check site-control switching, all three methods, exact volume
 entry and bounds, presets, mute restoration, queued updates, unrelated tab isolation,
@@ -27,6 +29,8 @@ and recovery via reload after an unsupported source change. It verifies the
 loading, playing, and paused states against real media, then adjusts and mutes
 a second audible tab and verifies that forgetting a site clears only its settings.
 The test uses a loopback server and Firefox's Marionette port.
+It verifies live browser appearance changes in the installed popup and checks the
+Spanish interface and English fallback through the popup fixtures.
 The fixture page also includes a hostile script that replaces `CustomEvent`,
 `dispatchEvent`, `MessagePort.postMessage`, and `JSON.stringify`, offers a fake
 bridge port, and looks for extension script tags. The pass fails if that script

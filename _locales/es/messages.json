@@ -1,0 +1,585 @@
+{
+  "locale": {
+    "message": "es"
+  },
+  "appName": {
+    "message": "Waveform"
+  },
+  "appDescription": {
+    "message": "Ajusta el volumen y consulta información sobre el audio y el vídeo."
+  },
+  "currentWebsite": {
+    "message": "Sitio web actual"
+  },
+  "connecting": {
+    "message": "Conectando…"
+  },
+  "siteControls": {
+    "message": "Controles del sitio"
+  },
+  "openMixer": {
+    "message": "Abrir el mezclador de pestañas"
+  },
+  "closeMixer": {
+    "message": "Cerrar el mezclador de pestañas"
+  },
+  "mixerTitle": {
+    "message": "Mezclador de pestañas"
+  },
+  "showDetails": {
+    "message": "Mostrar detalles multimedia"
+  },
+  "hideDetails": {
+    "message": "Ocultar detalles multimedia"
+  },
+  "detailsTitle": {
+    "message": "Detalles multimedia"
+  },
+  "openSettings": {
+    "message": "Abrir los ajustes"
+  },
+  "closeSettings": {
+    "message": "Cerrar los ajustes"
+  },
+  "settingsTitle": {
+    "message": "Ajustes"
+  },
+  "enableWaveform": {
+    "message": "Activar Waveform en este sitio"
+  },
+  "volumeControls": {
+    "message": "Controles de volumen"
+  },
+  "decreaseVolume": {
+    "message": "Bajar el volumen un 5 %"
+  },
+  "increaseVolume": {
+    "message": "Subir el volumen un 5 %"
+  },
+  "requestedVolume": {
+    "message": "Volumen solicitado"
+  },
+  "requested": {
+    "message": "Solicitado"
+  },
+  "checkingPlayer": {
+    "message": "Comprobando el reproductor"
+  },
+  "volumePresets": {
+    "message": "Niveles predefinidos"
+  },
+  "muteShortcut": {
+    "message": "Silenciar (M)"
+  },
+  "mute": {
+    "message": "Silenciar"
+  },
+  "unmute": {
+    "message": "Quitar silencio"
+  },
+  "connectingPlayer": {
+    "message": "Conectando con el reproductor"
+  },
+  "playbackInfoPending": {
+    "message": "Aquí se mostrará la información de reproducción."
+  },
+  "method": {
+    "message": "Método"
+  },
+  "auto": {
+    "message": "Auto"
+  },
+  "standard": {
+    "message": "Estándar"
+  },
+  "boost": {
+    "message": "Amplificar"
+  },
+  "methodAutoHint": {
+    "message": "Ajusta el volumen y amplifica los reproductores compatibles por encima del 100 %."
+  },
+  "methodStandardHint": {
+    "message": "Volumen normal hasta el 100 %. No usa Web Audio."
+  },
+  "methodBoostHint": {
+    "message": "Usa Web Audio si es compatible. En otros reproductores, el límite es del 100 %."
+  },
+  "restoreAudioHint": {
+    "message": "Restaurar los controles de audio del sitio y recordar esta elección"
+  },
+  "restoreAudio": {
+    "message": "Restaurar audio del sitio"
+  },
+  "reloadPage": {
+    "message": "Recargar página"
+  },
+  "backToVolume": {
+    "message": "Volver a los controles de volumen"
+  },
+  "backToControls": {
+    "message": "Volver a los controles"
+  },
+  "scanning": {
+    "message": "Buscando…"
+  },
+  "videoElements": {
+    "message": "Elementos de vídeo"
+  },
+  "audioElements": {
+    "message": "Elementos de audio"
+  },
+  "webAudioContexts": {
+    "message": "Contextos de Web Audio"
+  },
+  "playingElements": {
+    "message": "Elementos en reproducción"
+  },
+  "controllableSources": {
+    "message": "Fuentes ajustables"
+  },
+  "streamFormat": {
+    "message": "Formato de transmisión"
+  },
+  "notDetected": {
+    "message": "Sin detectar"
+  },
+  "videoCodec": {
+    "message": "Códec de vídeo"
+  },
+  "audioCodec": {
+    "message": "Códec de audio"
+  },
+  "activeMethod": {
+    "message": "Método activo"
+  },
+  "appliedVolume": {
+    "message": "Volumen aplicado"
+  },
+  "boostSupport": {
+    "message": "Compatibilidad con amplificación"
+  },
+  "checking": {
+    "message": "Comprobando"
+  },
+  "detectedMediaHint": {
+    "message": "La detección puede incluir reproductores silenciosos o en segundo plano."
+  },
+  "tabsWithAudio": {
+    "message": "Pestañas con audio"
+  },
+  "settingsAutosave": {
+    "message": "Los cambios se guardan automáticamente."
+  },
+  "volumeAndPlayback": {
+    "message": "Volumen y reproducción"
+  },
+  "maximumVolume": {
+    "message": "Volumen máximo"
+  },
+  "maximumVolumeHint": {
+    "message": "Límite de amplificación. Los niveles altos pueden distorsionar el audio."
+  },
+  "rememberMethod": {
+    "message": "Recordar el método de control"
+  },
+  "rememberMethodHint": {
+    "message": "Guarda tu elección para cada sitio web."
+  },
+  "rememberVolume": {
+    "message": "Recordar el volumen"
+  },
+  "rememberVolumeHint": {
+    "message": "Usa el volumen guardado para cada sitio al empezar."
+  },
+  "keepVolume": {
+    "message": "Mantener el volumen entre vídeos"
+  },
+  "keepVolumeHint": {
+    "message": "Vuelve a aplicar el volumen si el reproductor lo restablece."
+  },
+  "appearance": {
+    "message": "Apariencia"
+  },
+  "theme": {
+    "message": "Tema"
+  },
+  "followFirefox": {
+    "message": "Como Firefox"
+  },
+  "light": {
+    "message": "Claro"
+  },
+  "dark": {
+    "message": "Oscuro"
+  },
+  "largerText": {
+    "message": "Texto más grande"
+  },
+  "largerTextHint": {
+    "message": "Más espacio para facilitar la lectura."
+  },
+  "savedSites": {
+    "message": "Sitios guardados"
+  },
+  "forgetSite": {
+    "message": "Olvidar ajustes de este sitio"
+  },
+  "resetAllSites": {
+    "message": "Restablecer todos los sitios guardados"
+  },
+  "currentTab": {
+    "message": "Pestaña actual"
+  },
+  "noWebsite": {
+    "message": "Ningún sitio seleccionado"
+  },
+  "openWebsite": {
+    "message": "Abre un sitio web"
+  },
+  "openWebsiteToUse": {
+    "message": "Abre un sitio web para usar Waveform."
+  },
+  "enabledInTab": {
+    "message": "Activo en esta pestaña"
+  },
+  "savedVolume": {
+    "message": "Volumen guardado"
+  },
+  "percent": {
+    "message": "$value$ %",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "volumeMaximum": {
+    "message": "El volumen máximo es del $value$ %",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "setVolumeTo": {
+    "message": "Ajustar el volumen al $value$ %",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "requestedVolumeValue": {
+    "message": "Volumen solicitado del $value$ %",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "restoreVolumeShortcut": {
+    "message": "Restaurar el $value$ % (M)",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "html5": {
+    "message": "HTML5"
+  },
+  "webAudio": {
+    "message": "Web Audio"
+  },
+  "mixedMethods": {
+    "message": "Varios métodos"
+  },
+  "notReported": {
+    "message": "Sin datos"
+  },
+  "volumeSet": {
+    "message": "Volumen ajustado"
+  },
+  "variesByPlayer": {
+    "message": "Varía según el reproductor"
+  },
+  "standardMaximum": {
+    "message": "100 % como máximo"
+  },
+  "notDetermined": {
+    "message": "Sin determinar"
+  },
+  "reloadNeeded": {
+    "message": "Es necesario recargar"
+  },
+  "available": {
+    "message": "Disponible"
+  },
+  "unavailable": {
+    "message": "No disponible"
+  },
+  "somePlayersOnly": {
+    "message": "Solo algunos reproductores"
+  },
+  "waitingPlayer": {
+    "message": "Esperando al reproductor"
+  },
+  "noMedia": {
+    "message": "No se detectaron elementos multimedia"
+  },
+  "oneSource": {
+    "message": "1 fuente"
+  },
+  "sourceCount": {
+    "message": "$count$ fuentes",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "playing": {
+    "message": "En reproducción"
+  },
+  "waitingAudio": {
+    "message": "Esperando audio"
+  },
+  "paused": {
+    "message": "En pausa"
+  },
+  "audioReady": {
+    "message": "Audio listo"
+  },
+  "upTo100": {
+    "message": "Hasta el 100 %"
+  },
+  "boostSupported": {
+    "message": "Admite amplificación"
+  },
+  "appliedPercent": {
+    "message": "$value$ % aplicado",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "setPercent": {
+    "message": "$value$ % ajustado",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "limitedBoost": {
+    "message": "Amplificación limitada"
+  },
+  "applyError": {
+    "message": "No se pudieron aplicar los cambios"
+  },
+  "applyingSettings": {
+    "message": "Aplicando los ajustes"
+  },
+  "waitingVolume": {
+    "message": "Esperando a que el reproductor indique su volumen."
+  },
+  "reloadWithSiteControls": {
+    "message": "Recarga la página para recuperar el reproductor con los controles del sitio."
+  },
+  "restoreThenReload": {
+    "message": "Restaura el audio del sitio y recarga la página para recuperar el reproductor."
+  },
+  "playerUnavailable": {
+    "message": "Reproductor no disponible"
+  },
+  "playerUnavailableHint": {
+    "message": "Waveform no pudo conectarse. Puedes usar los controles del sitio."
+  },
+  "startPlaybackHint": {
+    "message": "Inicia la reproducción para que Waveform detecte el audio."
+  },
+  "clickPlay": {
+    "message": "Pulsa Reproducir para continuar"
+  },
+  "interactionHint": {
+    "message": "Para procesar el audio, interactúa con el reproductor."
+  },
+  "noMediaHint": {
+    "message": "Reproduce audio o vídeo en esta página para empezar."
+  },
+  "noAudioTrack": {
+    "message": "No se detectó ninguna pista de audio"
+  },
+  "noAudioTrackHint": {
+    "message": "El vídeo detectado no contiene audio."
+  },
+  "resumeToHearSettings": {
+    "message": "Inicia o reanuda la reproducción para oír el audio con tus ajustes."
+  },
+  "mutedInFirefox": {
+    "message": "Silenciado en Firefox"
+  },
+  "mutedInFirefoxDetail": {
+    "message": "Silenciado en Firefox."
+  },
+  "usingSiteControls": {
+    "message": "Se están usando los controles del sitio."
+  },
+  "protectedAudio": {
+    "message": "Este reproductor usa audio protegido."
+  },
+  "unverifiedBoost": {
+    "message": "Waveform no pudo comprobar si esta fuente admite amplificación."
+  },
+  "someVolumeLimited": {
+    "message": "Algunos reproductores tienen un límite del 100 %."
+  },
+  "volumeLimited": {
+    "message": "Volumen limitado al 100 %."
+  },
+  "boostUnavailable": {
+    "message": "Amplificación no disponible."
+  },
+  "appliedDetail": {
+    "message": "$value$ % aplicado.",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "setDetail": {
+    "message": "$value$ % ajustado.",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
+  "appliedMutedDetail": {
+    "message": "0 % aplicado · silenciado."
+  },
+  "setMutedDetail": {
+    "message": "0 % ajustado · silenciado."
+  },
+  "volumeVaries": {
+    "message": "El volumen varía según el reproductor."
+  },
+  "tabUpdateFailed": {
+    "message": "No se pudo actualizar esta pestaña. Inténtalo de nuevo."
+  },
+  "findingAudioTabs": {
+    "message": "Buscando pestañas con audio…"
+  },
+  "currentWindowUnavailable": {
+    "message": "No se pudo encontrar la ventana actual del navegador."
+  },
+  "mixerLoadFailed": {
+    "message": "No se pudieron cargar las pestañas con audio. Vuelve a abrir el mezclador."
+  },
+  "goToTab": {
+    "message": "Ir a $title$",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      }
+    }
+  },
+  "muteTab": {
+    "message": "Silenciar $title$",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      }
+    }
+  },
+  "unmuteTab": {
+    "message": "Quitar silencio a $title$",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      }
+    }
+  },
+  "requestedTabVolume": {
+    "message": "Volumen solicitado para $title$",
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      }
+    }
+  },
+  "volumeUnavailable": {
+    "message": "Control de volumen no disponible"
+  },
+  "emptyMixer": {
+    "message": "No hay pestañas con sonido. Reproduce audio en una pestaña para verla aquí."
+  },
+  "preferencesLoadFailed": {
+    "message": "No se pudieron cargar las preferencias guardadas."
+  },
+  "saving": {
+    "message": "Guardando…"
+  },
+  "settingsSaved": {
+    "message": "Cambios guardados."
+  },
+  "settingsSaveFailed": {
+    "message": "No se pudieron guardar los cambios. Inténtalo de nuevo."
+  },
+  "confirmForgetSite": {
+    "message": "¿Olvidar los ajustes de $domain$ y restaurar el audio del sitio en esta pestaña?",
+    "placeholders": {
+      "domain": {
+        "content": "$1"
+      }
+    }
+  },
+  "forgotSite": {
+    "message": "Se olvidaron los ajustes de $domain$.",
+    "placeholders": {
+      "domain": {
+        "content": "$1"
+      }
+    }
+  },
+  "forgetSiteFailed": {
+    "message": "No se pudieron olvidar los ajustes del sitio. Vuelve a abrir Waveform e inténtalo de nuevo."
+  },
+  "confirmResetSites": {
+    "message": "¿Restablecer los volúmenes, los métodos de control y las preferencias guardadas para todos los sitios? Se conservarán la apariencia y los ajustes generales."
+  },
+  "sitesReset": {
+    "message": "Se restablecieron los sitios guardados. Abre una pestaña nueva para usar los valores predeterminados."
+  },
+  "sitesResetFailed": {
+    "message": "No se pudieron restablecer los sitios guardados. Inténtalo de nuevo."
+  },
+  "fallbackTabTitle": {
+    "message": "Pestaña $index$",
+    "placeholders": {
+      "index": {
+        "content": "$1"
+      }
+    }
+  },
+  "noActiveTab": {
+    "message": "Ninguna pestaña activa"
+  },
+  "mixerTabChanged": {
+    "message": "Esta pestaña cambió. Vuelve a abrir el mezclador."
+  },
+  "mixerPlayerUnavailable": {
+    "message": "Waveform no puede ajustar este reproductor. Puedes silenciar la pestaña."
+  },
+  "tabNavigated": {
+    "message": "La pestaña cambió de sitio web. Vuelve a abrir Waveform."
+  },
+  "openWebsiteToForget": {
+    "message": "Abre un sitio web para olvidar sus ajustes."
+  },
+  "invalidVolume": {
+    "message": "Introduce un volumen válido."
+  }
+}

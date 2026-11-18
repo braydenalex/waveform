@@ -22,6 +22,13 @@ window.fixture = {
 addEventListener('error', event => fixture.errors.push(event.message));
 addEventListener('unhandledrejection', event => fixture.errors.push(String(event.reason)));
 window.browser = {
+    i18n: {
+        getMessage(key, substitutions = []) {
+            const entry = fixtureMessages[key];
+            if (!entry) throw new Error(`Missing translation for ${key}`);
+            return entry.message.replace(/\$(\w+)\$/g, (_, name) => substitutions[Number(entry.placeholders[name].content.slice(1)) - 1]);
+        }
+    },
     runtime: {
         getManifest: () => ({ version: '__VERSION__' }), // Filled in from manifest.json by popup-smoke.py.
         onMessage: { addListener: listener => fixture.listeners.push(listener) },
@@ -67,3 +74,7 @@ window.browser = {
         async remove(keys) { for (const key of keys) delete fixture.storage[key]; }
     } }
 };
+
+const messagesByLocale = __MESSAGES_BY_LOCALE__;
+const locale = new URLSearchParams(location.search).get('locale');
+const fixtureMessages = { ...messagesByLocale.en, ...messagesByLocale[locale] };
